@@ -2,7 +2,7 @@
 
 if __name__ == "__main__":
     import udi_interface
-    from kidde_homesafe import KiddeClient, KiddeCommand
+    #from kidde_homesafe import KiddeClient, KiddeCommand
     import asyncio
     import json
     from nodes import KiddeController
