@@ -10,7 +10,7 @@ if __name__ == "__main__":
         polyglot = udi_interface.Interface([])
         polyglot.start({"version": "0.1.0", "requestId": True})
         polyglot.setCustomParamsDoc()
-        KiddeController(polyglot, "setup", "setup", "Kidde Setup")
+        KiddeController(polyglot, "setup", "setup", "Kidde Monitors")
         polyglot.runForever()
     except (KeyboardInterrupt, SystemExit):
         sys.exit(0)
