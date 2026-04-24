@@ -2,7 +2,7 @@
 
 import threading
 import asyncio
-from kidde_homesafe import KiddeHomeSafe
+from kidde_homesafe import KiddeClient, KiddeCommand
 
 class KiddeAsyncAdapter:
     def __init__(self):
