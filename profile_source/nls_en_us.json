@@ -1,4 +1,0 @@
-{
-  "deprecated": true,
-  "note": "Dynamic profiles do not use NLS files. Names for nodes, properties, commands, and enum values are defined inline in profile_source/nodedefs.json and profile_source/editors.json."
-}

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Generate PG3-compatible profile artifacts from JSON source files.
+"""Generate PG3-compatible static profile artifacts from a single JSON source.
 
 Reads:
-  profile_source/nodedefs.json  -> profile/nodedef/nodedefs.xml
-  profile_source/editors.json   -> profile/editor/editors.xml
-  profile_source/nls_en_us.json -> profile/nls/en_us.txt
+    profile_source/profile.json -> profile/nodedef/nodedefs.xml
+                                                             -> profile/editor/editors.xml
+                                                             -> profile/nls/en_us.txt
 
 Run from the repository root:
-  python tools/build_profile.py
+    python tools/build_profile.py
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from xml.dom import minidom
 ROOT = Path(__file__).resolve().parent.parent
 SRC  = ROOT / "profile_source"
 DEST = ROOT / "profile"
+PROFILE_FILE = SRC / "profile.json"
 
 
 def _pretty_xml(element: ET.Element) -> str:
@@ -34,17 +35,21 @@ def _pretty_xml(element: ET.Element) -> str:
     return "\n".join(line for line in lines if line.strip()) + "\n"
 
 
-def build_nodedefs() -> None:
-    src = json.loads((SRC / "nodedefs.json").read_text(encoding="utf-8"))
+def _load_profile() -> dict:
+    return json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
+
+
+def build_nodedefs(profile: dict) -> None:
     root = ET.Element("nodeDefs")
 
-    for nd in src["nodeDefs"]:
-        node_el = ET.SubElement(root, "nodeDef", id=nd["id"], nls=nd["nls"])
+    for nd in profile.get("nodedefs", []):
+        nls_id = f"nls{nd['id']}"
+        node_el = ET.SubElement(root, "nodeDef", id=nd["id"], nls=nls_id)
         ET.SubElement(node_el, "editors")
 
         sts_el = ET.SubElement(node_el, "sts")
-        for st in nd.get("sts", []):
-            ET.SubElement(sts_el, "st", id=st["id"], editor=st["editor"])
+        for prop in nd.get("properties", []):
+            ET.SubElement(sts_el, "st", id=prop["id"], editor=prop["editor"])
 
         cmds_el = ET.SubElement(node_el, "cmds")
         sends = nd.get("cmds", {}).get("sends", [])
@@ -64,22 +69,24 @@ def build_nodedefs() -> None:
     print(f"  wrote {out.relative_to(ROOT)}")
 
 
-def build_editors() -> None:
-    src = json.loads((SRC / "editors.json").read_text(encoding="utf-8"))
+def build_editors(profile: dict) -> None:
     root = ET.Element("editors")
 
-    for ed in src["editors"]:
+    for ed in profile.get("editors", []):
         ed_el = ET.SubElement(root, "editor", id=ed["id"])
-        r = ed["range"]
-        attrs = {"uom": str(r["uom"])}
-        if "subset" in r:
-            attrs["subset"] = r["subset"]
-            attrs["nls"] = r["nls"]
-        if "min" in r:
-            attrs["min"] = str(r["min"])
-            attrs["max"] = str(r["max"])
-            attrs["step"] = str(r["step"])
-        ET.SubElement(ed_el, "range", **attrs)
+        for r in ed.get("ranges", []):
+            attrs = {"uom": str(r["uom"])}
+            if "subset" in r:
+                attrs["subset"] = r["subset"]
+                if "names" in r:
+                    attrs["nls"] = ed["id"]
+            if "min" in r:
+                attrs["min"] = str(r["min"])
+            if "max" in r:
+                attrs["max"] = str(r["max"])
+            if "step" in r:
+                attrs["step"] = str(r["step"])
+            ET.SubElement(ed_el, "range", **attrs)
 
     out = DEST / "editor" / "editors.xml"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -87,26 +94,40 @@ def build_editors() -> None:
     print(f"  wrote {out.relative_to(ROOT)}")
 
 
-def build_nls() -> None:
-    src = json.loads((SRC / "nls_en_us.json").read_text(encoding="utf-8"))
+def build_nls(profile: dict) -> None:
     lines: list[str] = []
 
-    for value in src.get("nodes", {}).values():
-        _ = value  # written below with keys
-    for key, value in src.get("nodes", {}).items():
-        lines.append(f"{key}={value}")
+    for nd in profile.get("nodedefs", []):
+        lines.append(f"ND-{nd['id']}-NAME={nd.get('name', nd['id'])}")
+        if nd.get("icon"):
+            lines.append(f"ND-{nd['id']}-ICON={nd['icon']}")
 
     lines.append("")
-    for key, value in src.get("drivers", {}).items():
-        lines.append(f"{key}={value}")
+    for nd in profile.get("nodedefs", []):
+        nls_id = f"nls{nd['id']}"
+        for prop in nd.get("properties", []):
+            key = f"ST-{nls_id}-{prop['id']}-NAME"
+            value = prop.get("name", prop["id"])
+            lines.append(f"{key}={value}")
 
     lines.append("")
-    for key, value in src.get("commands", {}).items():
-        lines.append(f"{key}={value}")
+    seen_cmd_labels: set[str] = set()
+    for nd in profile.get("nodedefs", []):
+        nls_id = f"nls{nd['id']}"
+        for section in ("sends", "accepts"):
+            for cmd in nd.get("cmds", {}).get(section, []):
+                key = f"CMD-{nls_id}-{cmd['id']}-NAME"
+                if key in seen_cmd_labels:
+                    continue
+                value = cmd.get("name", cmd["id"])
+                lines.append(f"{key}={value}")
+                seen_cmd_labels.add(key)
 
     lines.append("")
-    for key, value in src.get("enums", {}).items():
-        lines.append(f"{key}={value}")
+    for ed in profile.get("editors", []):
+        for r in ed.get("ranges", []):
+            for value_key, value_name in r.get("names", {}).items():
+                lines.append(f"{ed['id']}-{value_key}={value_name}")
 
     out = DEST / "nls" / "en_us.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -116,9 +137,10 @@ def build_nls() -> None:
 
 def main() -> None:
     print("Building profile artifacts from JSON sources...")
-    build_nodedefs()
-    build_editors()
-    build_nls()
+    profile = _load_profile()
+    build_nodedefs(profile)
+    build_editors(profile)
+    build_nls(profile)
     print("Done.")
 
 

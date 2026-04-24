@@ -45,12 +45,20 @@ class KiddeController(udi_interface.Node):
         self.online = 0
         self.last_update = int(time.time())
         self._alarm_nodes: dict[int, "KiddeAlarmNode"] = {}
+        self._started = False
+        self._has_valid_params = False
+        self._config_done = False
+        self._controller_node_added = False
+        self._pending_initial_discovery = False
+        self._initial_discovery_in_progress = False
 
         self.poly.subscribe(self.poly.START, self.start, self.address)
         self.poly.subscribe(self.poly.STOP, self.stop)
         self.poly.subscribe(self.poly.POLL, self.poll)
         self.poly.subscribe(self.poly.CUSTOMPARAMS, self.handle_params)
         self.poly.subscribe(self.poly.CUSTOMDATA, self.handle_custom_data)
+        self.poly.subscribe(self.poly.CONFIGDONE, self.handle_config_done)
+        self.poly.subscribe(self.poly.ADDNODEDONE, self.handle_addnode_done)
         self.poly.subscribe(self.poly.LOGLEVEL, self.handle_log_level)
         self.poly.subscribe(self.poly.DISCOVER, self.discover)
 
@@ -59,8 +67,11 @@ class KiddeController(udi_interface.Node):
         self.poly.addNode(self, conn_status="ST", rename=True)
 
     def start(self):
+        self._started = True
         self._set("TIME", int(time.time()), 151)
-        # Defer Kidde login to longPoll
+        self._pending_initial_discovery = True
+        LOGGER.info("Controller start: waiting for CONFIGDONE and ADDNODEDONE before initial Kidde discovery")
+        self._maybe_run_initial_discovery("START")
 
     def stop(self):
         self._set("ST", 0)
@@ -86,18 +97,69 @@ class KiddeController(udi_interface.Node):
         if not self.config.password:
             missing.append("PASSWORD")
         if missing:
+            self._has_valid_params = False
             self.poly.Notices["required"] = "Missing required parameters: " + ", ".join(missing)
             self.online = 0
             self._set("ST", 0)
             self._set("GV1", 0)
             return
 
-        # No device login here; defer to longPoll for non-blocking initialization.
+        self._has_valid_params = True
         self.adapter.clear_cached_client()
+        if self._started:
+            self._pending_initial_discovery = True
+            LOGGER.info("Configuration updated: scheduling Kidde discovery when startup is fully ready")
+            self._maybe_run_initial_discovery("CUSTOMPARAMS")
 
     def handle_custom_data(self, custom_data):
         self.data_store.load(custom_data or {})
         # Restore any cached state if needed
+
+    def handle_config_done(self):
+        self._config_done = True
+        LOGGER.info("CONFIGDONE received")
+        self._maybe_run_initial_discovery("CONFIGDONE")
+
+    def handle_addnode_done(self, node):
+        node_address = getattr(node, "address", None)
+        if node_address == self.address:
+            self._controller_node_added = True
+            LOGGER.info("ADDNODEDONE received for controller node")
+            self._maybe_run_initial_discovery("ADDNODEDONE")
+
+    def _maybe_run_initial_discovery(self, reason: str) -> None:
+        if not self._pending_initial_discovery or self._initial_discovery_in_progress:
+            return
+
+        waiting_for: list[str] = []
+        if not self._started:
+            waiting_for.append("START")
+        if not self._config_done:
+            waiting_for.append("CONFIGDONE")
+        if not self._controller_node_added:
+            waiting_for.append("ADDNODEDONE(controller)")
+        if not self._has_valid_params:
+            waiting_for.append("valid EMAIL/PASSWORD params")
+
+        if waiting_for:
+            LOGGER.debug(
+                "Initial Kidde discovery not ready after %s; waiting for %s",
+                reason,
+                ", ".join(waiting_for),
+            )
+            return
+
+        LOGGER.info("Running initial Kidde discovery after %s", reason)
+        self._initial_discovery_in_progress = True
+        try:
+            self._refresh_status()
+            if self.online:
+                LOGGER.info("Initial Kidde discovery complete: %d detector node(s)", len(self._alarm_nodes))
+                self._pending_initial_discovery = False
+            else:
+                LOGGER.warning("Initial Kidde discovery failed; will retry on subsequent longPoll")
+        finally:
+            self._initial_discovery_in_progress = False
 
     def poll(self, poll_type):
         self._set("TIME", int(time.time()), 151)
@@ -109,6 +171,9 @@ class KiddeController(udi_interface.Node):
                 self.reportCmd("DOF", 2)
             return
         if poll_type == "longPoll":
+            if self._pending_initial_discovery:
+                self._maybe_run_initial_discovery("longPoll")
+                return
             self._refresh_status()
 
     def _refresh_status(self):

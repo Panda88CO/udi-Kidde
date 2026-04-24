@@ -1,0 +1,197 @@
+{
+  "editors": [
+    {
+      "id": "bool",
+      "ranges": [
+        {
+          "uom": "2",
+          "min": 0,
+          "max": 1,
+          "step": 1,
+          "names": {
+            "0": "No",
+            "1": "Yes"
+          }
+        }
+      ]
+    },
+    {
+      "id": "connect",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2",
+          "names": {
+            "0": "Disconnected",
+            "1": "Connected",
+            "2": "Failed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "count",
+      "ranges": [
+        {
+          "uom": "56",
+          "min": 0,
+          "max": 255,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "ppm",
+      "ranges": [
+        {
+          "uom": "54",
+          "min": 0,
+          "max": 9999,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "unixtime",
+      "ranges": [
+        {
+          "uom": "151",
+          "min": 0,
+          "max": 2147483647,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "battery",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2,3",
+          "names": {
+            "0": "Unknown",
+            "1": "OK",
+            "2": "Low",
+            "3": "Critical"
+          }
+        }
+      ]
+    }
+  ],
+  "nodedefs": [
+    {
+      "id": "setup",
+      "name": "Kidde Monitors",
+      "icon": "GenericCtl",
+      "properties": [
+        {
+          "id": "ST",
+          "editor": "connect",
+          "name": "Node Server Status"
+        },
+        {
+          "id": "GV0",
+          "editor": "count",
+          "name": "Number of Alarms"
+        },
+        {
+          "id": "GV1",
+          "editor": "bool",
+          "name": "Online Status"
+        },
+        {
+          "id": "TIME",
+          "editor": "unixtime",
+          "name": "Last Update Time"
+        }
+      ],
+      "cmds": {
+        "sends": [
+          {
+            "id": "DON",
+            "name": "Heartbeat On"
+          },
+          {
+            "id": "DOF",
+            "name": "Heartbeat Off"
+          }
+        ],
+        "accepts": [
+          {
+            "id": "UPDATE",
+            "name": "Reload Configuration"
+          }
+        ]
+      },
+      "links": {
+        "ctl": [],
+        "rsp": []
+      }
+    },
+    {
+      "id": "kiddealarm",
+      "name": "Kidde Alarm",
+      "icon": "GenericCtl",
+      "properties": [
+        {
+          "id": "ST",
+          "editor": "bool",
+          "name": "Device Online"
+        },
+        {
+          "id": "GV0",
+          "editor": "bool",
+          "name": "Smoke Alarm"
+        },
+        {
+          "id": "GV1",
+          "editor": "bool",
+          "name": "CO Alarm"
+        },
+        {
+          "id": "SMOKED",
+          "editor": "count",
+          "name": "Smoke Level"
+        },
+        {
+          "id": "CO",
+          "editor": "ppm",
+          "name": "CO Level"
+        },
+        {
+          "id": "GV4",
+          "editor": "battery",
+          "name": "Battery State"
+        },
+        {
+          "id": "TIME",
+          "editor": "unixtime",
+          "name": "Last Seen"
+        }
+      ],
+      "cmds": {
+        "sends": [
+          {
+            "id": "DON",
+            "name": "Alarm Active"
+          },
+          {
+            "id": "DOF",
+            "name": "Alarm Cleared"
+          }
+        ],
+        "accepts": [
+          {
+            "id": "HUSH",
+            "name": "Hush Alarm"
+          }
+        ]
+      },
+      "links": {
+        "ctl": [],
+        "rsp": []
+      }
+    }
+  ],
+  "linkdefs": []
+}
