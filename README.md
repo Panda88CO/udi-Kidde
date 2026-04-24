@@ -9,7 +9,8 @@ PG3x node server for Kidde HomeSafe alarms, using udi_interface and kidde-homesa
 - JSON-driven profile workflow (planned)
 
 ## Setup
-- Configure EMAIL, PASSWORD, COOKIE_FILE in PG3 custom parameters
+- Configure EMAIL and PASSWORD in PG3 custom parameters
+- Cookie persistence is handled automatically (no user action needed)
 - Run install.sh to install dependencies
 - Start with udi_kidde.py
 
