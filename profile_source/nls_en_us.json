@@ -1,12 +1,4 @@
 {
-  "ND-setup-NAME": "Kidde Controller",
-  "ND-setup-ICON": "GenericCtrl",
-  "ST-nlssetup-ST-NAME": "Node Server Status",
-  "ST-nlssetup-GV0-NAME": "Number of Alarms",
-  "ST-nlssetup-GV1-NAME": "Online Status",
-  "ST-nlssetup-TIME-NAME": "Last Update Time",
-  "CMD-nlssetup-DON-NAME": "Heartbeat On",
-  "CMD-nlssetup-DOF-NAME": "Heartbeat Off",
-  "CMD-nlssetup-UPDATE-NAME": "Reload Configuration",
-  "CMD-nlssetup-QUERY-NAME": "Query"
+  "deprecated": true,
+  "note": "Dynamic profiles do not use NLS files. Names for nodes, properties, commands, and enum values are defined inline in profile_source/nodedefs.json and profile_source/editors.json."
 }

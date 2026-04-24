@@ -1,3 +1,81 @@
 {
-  "editors": []
+  "editors": [
+    {
+      "id": "bool",
+      "ranges": [
+        {
+          "uom": "2",
+          "min": 0,
+          "max": 1,
+          "step": 1,
+          "names": {
+            "0": "No",
+            "1": "Yes"
+          }
+        }
+      ]
+    },
+    {
+      "id": "connect",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2",
+          "names": {
+            "0": "Disconnected",
+            "1": "Connected",
+            "2": "Failed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "count",
+      "ranges": [
+        {
+          "uom": "56",
+          "min": 0,
+          "max": 255,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "ppm",
+      "ranges": [
+        {
+          "uom": "54",
+          "min": 0,
+          "max": 9999,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "unixtime",
+      "ranges": [
+        {
+          "uom": "151",
+          "min": 0,
+          "max": 2147483647,
+          "step": 1
+        }
+      ]
+    },
+    {
+      "id": "battery",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2,3",
+          "names": {
+            "0": "Unknown",
+            "1": "OK",
+            "2": "Low",
+            "3": "Critical"
+          }
+        }
+      ]
+    }
+  ]
 }

@@ -2,7 +2,6 @@
 
 if __name__ == "__main__":
     import udi_interface
-    import json
     from nodes import KiddeController
     import sys
 

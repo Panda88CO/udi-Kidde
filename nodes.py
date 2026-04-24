@@ -1,9 +1,25 @@
 # Node classes for Kidde PG3x node server
 
-import udi_interface
+import re
 import time
+import udi_interface
+from datetime import datetime, timezone
 from config_parser import KiddeConfig, build_config
 from kidde_async_adapter import KiddeAsyncAdapter
+
+_ISO_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})")
+
+def _parse_last_seen(s) -> int:
+    """Parse an ISO-8601 timestamp string to a Unix integer, returning 0 on failure."""
+    if not s:
+        return 0
+    m = _ISO_TS_RE.match(str(s))
+    if not m:
+        return 0
+    try:
+        return int(datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc).timestamp())
+    except Exception:
+        return 0
 
 LOGGER = udi_interface.LOGGER
 Custom = udi_interface.Custom
@@ -28,6 +44,7 @@ class KiddeController(udi_interface.Node):
         self.num_alarms = 0
         self.online = 0
         self.last_update = int(time.time())
+        self._alarm_nodes: dict[int, "KiddeAlarmNode"] = {}
 
         self.poly.subscribe(self.poly.START, self.start, self.address)
         self.poly.subscribe(self.poly.STOP, self.stop)
@@ -70,7 +87,13 @@ class KiddeController(udi_interface.Node):
             missing.append("PASSWORD")
         if missing:
             self.poly.Notices["required"] = "Missing required parameters: " + ", ".join(missing)
-        # No device login here; defer to longPoll
+            self.online = 0
+            self._set("ST", 0)
+            self._set("GV1", 0)
+            return
+
+        # No device login here; defer to longPoll for non-blocking initialization.
+        self.adapter.clear_cached_client()
 
     def handle_custom_data(self, custom_data):
         self.data_store.load(custom_data or {})
@@ -89,23 +112,144 @@ class KiddeController(udi_interface.Node):
             self._refresh_status()
 
     def _refresh_status(self):
-        # Run async Kidde refresh in background
-        result = self.adapter.refresh()
+        if not self.config.email or not self.config.password:
+            self.online = 0
+            self._set("ST", 0)
+            self._set("GV1", 0)
+            return
+
+        result = self.adapter.refresh(
+            email=self.config.email,
+            password=self.config.password,
+            temp_unit=self.config.temp_unit,
+            timeout=20.0,
+        )
         if result:
             self.online = 1
             self.num_alarms = result.get("num_alarms", 0)
             self.last_update = int(time.time())
+            self._set("ST", 1)
+            self.poly.Notices.delete("refresh")
+            self._reconcile_nodes(result.get("devices", {}))
         else:
             self.online = 0
+            self._set("ST", 0)
+            self.poly.Notices["refresh"] = "Kidde refresh failed. Check credentials/connectivity."
         self._set("GV1", self.online)
         self._set("GV0", self.num_alarms)
         self._set("TIME", self.last_update, 151)
 
+    def _reconcile_nodes(self, devices: dict) -> None:
+        """Create child nodes for newly-discovered devices and update existing ones."""
+        for device_id, device in devices.items():
+            device_id = int(device_id)
+            address = f"d{device_id}"
+            if device_id not in self._alarm_nodes:
+                label = (
+                    device.get("label")
+                    or device.get("announcement")
+                    or f"Device {device_id}"
+                )
+                location_id = int(device.get("location_id", 0))
+                alarm_node = KiddeAlarmNode(
+                    self.poly, self.address, address, label,
+                    location_id=location_id, device_id=device_id,
+                )
+                alarm_node.controller = self
+                self.poly.addNode(alarm_node)
+                self._alarm_nodes[device_id] = alarm_node
+            self._alarm_nodes[device_id].update_from_device(device)
+
     def discover(self, *_):
-        pass
+        self._refresh_status()
+
+    def force_update(self, command=None):
+        self._refresh_status()
 
     def _set(self, driver, value, uom=None, force=False):
         if uom is None:
             self.setDriver(driver, value, True, force)
         else:
             self.setDriver(driver, value, True, force, uom=uom)
+
+    commands = {
+        "UPDATE": force_update,
+    }
+
+
+# Battery state string → integer mapping for GV4
+_BATTERY_MAP = {
+    "ok":       1,
+    "low":      2,
+    "critical": 3,
+}
+
+
+class KiddeAlarmNode(udi_interface.Node):
+    """Child node representing a single Kidde smoke/CO detector."""
+
+    id = "kiddealarm"
+    drivers = [
+        {"driver": "ST",     "value": 0, "uom": 2},    # Device online (boolean)
+        {"driver": "GV0",   "value": 0, "uom": 2},    # Smoke alarm (boolean)
+        {"driver": "GV1",   "value": 0, "uom": 2},    # CO alarm (boolean)
+        {"driver": "SMOKED","value": 0, "uom": 56},   # Smoke level (raw)
+        {"driver": "CO",    "value": 0, "uom": 54},   # CO level (PPM)
+        {"driver": "GV4",   "value": 0, "uom": 25},   # Battery state (battery enum)
+        {"driver": "TIME",  "value": 0, "uom": 151},  # Last seen (unix time)
+    ]
+
+    def __init__(self, polyglot, primary, address, name, location_id, device_id):
+        super().__init__(polyglot, primary, address, name)
+        self.location_id = location_id
+        self.device_id = device_id
+        self.controller: "KiddeController | None" = None
+        self._alarm_active: bool = False  # tracks last reported alarm state
+
+    def update_from_device(self, device: dict) -> None:
+        """Update drivers from a device dict returned by KiddeDataset.devices."""
+        online      = 0 if device.get("lost", False) else 1
+        smoke       = 1 if device.get("smoke_alarm", False) else 0
+        co          = 1 if device.get("co_alarm",    False) else 0
+        smoke_level = int(device.get("smoke_level", 0) or 0)
+        co_level    = int(device.get("co_level",    0) or 0)
+        battery_raw = str(device.get("battery_state", "") or "").lower()
+        battery_int = _BATTERY_MAP.get(battery_raw, 0)
+        last_seen   = _parse_last_seen(device.get("last_seen"))
+
+        self.setDriver("ST",     online)
+        self.setDriver("GV0",   smoke)
+        self.setDriver("GV1",   co)
+        self.setDriver("SMOKED",smoke_level)
+        self.setDriver("CO",    co_level)
+        self.setDriver("GV4",   battery_int)
+        self.setDriver("TIME",  last_seen)
+
+        # Report DON on alarm onset, DOF on alarm clearance
+        alarm_now = bool(smoke or co)
+        if alarm_now and not self._alarm_active:
+            self.reportCmd("DON", 2)
+        elif not alarm_now and self._alarm_active:
+            self.reportCmd("DOF", 2)
+        self._alarm_active = alarm_now
+
+    def hush(self, command=None) -> None:
+        """Send HUSH command to this device via the controller's adapter."""
+        if self.controller is None:
+            LOGGER.error("KiddeAlarmNode.hush: no controller reference")
+            return
+        cfg = self.controller.config
+        if not cfg.email or not cfg.password:
+            LOGGER.warning("KiddeAlarmNode.hush: missing credentials")
+            return
+        from kidde_homesafe import KiddeCommand
+        ok = self.controller.adapter.device_command(
+            cfg.email, cfg.password,
+            self.location_id, self.device_id,
+            KiddeCommand.HUSH,
+        )
+        LOGGER.info("HUSH %s/%s -> %s", self.location_id, self.device_id, ok)
+
+    commands = {
+        "HUSH": hush,
+    }
