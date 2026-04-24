@@ -1,2 +1,2 @@
 udi_interface>=3.4.5
-kidde-homesafe
+kidde-homesafe>=0.0.3
