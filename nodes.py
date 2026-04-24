@@ -122,6 +122,8 @@ class KiddeController(udi_interface.Node):
 
     def handle_addnode_done(self, node):
         node_address = getattr(node, "address", None)
+        if node_address is None and isinstance(node, dict):
+            node_address = node.get("address")
         if node_address == self.address:
             self._controller_node_added = True
             LOGGER.info("ADDNODEDONE received for controller node")
@@ -130,6 +132,12 @@ class KiddeController(udi_interface.Node):
     def _maybe_run_initial_discovery(self, reason: str) -> None:
         if not self._pending_initial_discovery or self._initial_discovery_in_progress:
             return
+
+        # In practice the controller node is often effectively ready by the time
+        # START/longPoll runs, even if ADDNODEDONE is not observed for it.
+        if not self._controller_node_added and getattr(self, "added", False):
+            self._controller_node_added = True
+            LOGGER.debug("Controller node marked ready from node.added state after %s", reason)
 
         waiting_for: list[str] = []
         if not self._started:
