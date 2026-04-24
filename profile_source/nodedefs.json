@@ -1,0 +1,21 @@
+{
+  "nodes": [
+    {
+      "id": "setup",
+      "name": "Kidde Controller",
+      "icon": "GenericCtrl",
+      "drivers": [
+        {"driver": "ST", "uom": 25, "desc": "Node Server Status"},
+        {"driver": "GV0", "uom": 56, "desc": "Number of Alarms"},
+        {"driver": "GV1", "uom": 25, "desc": "Online Status"},
+        {"driver": "TIME", "uom": 151, "desc": "Last Update Time"}
+      ],
+      "commands": [
+        {"cmd": "DON", "desc": "Heartbeat On"},
+        {"cmd": "DOF", "desc": "Heartbeat Off"},
+        {"cmd": "UPDATE", "desc": "Reload Configuration"},
+        {"cmd": "QUERY", "desc": "Query"}
+      ]
+    }
+  ]
+}

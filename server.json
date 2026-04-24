@@ -1,0 +1,7 @@
+{
+  "name": "udi-Kidde",
+  "shortPoll": 30,
+  "longPoll": 180,
+  "executable": "udi_kidde.py",
+  "description": "Kidde HomeSafe integration for UDI PG3x"
+}
