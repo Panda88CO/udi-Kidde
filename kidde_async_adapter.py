@@ -125,9 +125,7 @@ class KiddeAsyncAdapter:
                 count += 1
         return count
 
-    async def _refresh_async(self, email: str, password: str, temp_unit: str = "F") -> Dict[str, Any]:
-        # temp_unit is parsed at config-level and reserved for future data mapping.
-        _ = temp_unit
+    async def _refresh_async(self, email: str, password: str) -> Dict[str, Any]:
         LOGGER.debug("Refreshing Kidde dataset for %s", _redact_email(email))
         client = await self._ensure_client(email=email, password=password)
         dataset = await client.get_data(get_devices=True, get_events=True)
@@ -158,13 +156,13 @@ class KiddeAsyncAdapter:
         await client.device_command(location_id=location_id, device_id=device_id, command=command)
         LOGGER.debug("Kidde command sent successfully")
 
-    def refresh(self, email: str, password: str, temp_unit: str = "F", timeout: float = 20.0) -> Dict[str, Any] | None:
+    def refresh(self, email: str, password: str, timeout: float = 20.0) -> Dict[str, Any] | None:
         if not email or not password:
             LOGGER.debug("Skipping Kidde refresh due to missing credentials")
             return None
         with self._lock:
             try:
-                result = self._submit(self._refresh_async(email=email, password=password, temp_unit=temp_unit), timeout=timeout)
+                result = self._submit(self._refresh_async(email=email, password=password), timeout=timeout)
                 LOGGER.debug("Kidde refresh succeeded")
                 return result
             except KiddeClientAuthError:
@@ -172,7 +170,7 @@ class KiddeAsyncAdapter:
                 # Force a clean login path on next attempt.
                 self._client = None
                 try:
-                    result = self._submit(self._refresh_async(email=email, password=password, temp_unit=temp_unit), timeout=timeout)
+                    result = self._submit(self._refresh_async(email=email, password=password), timeout=timeout)
                     LOGGER.debug("Kidde refresh succeeded after re-authentication")
                     return result
                 except Exception:

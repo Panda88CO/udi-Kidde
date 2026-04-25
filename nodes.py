@@ -194,7 +194,6 @@ class KiddeController(udi_interface.Node):
         result = self.adapter.refresh(
             email=self.config.email,
             password=self.config.password,
-            temp_unit=self.config.temp_unit,
             timeout=20.0,
         )
         if result:
