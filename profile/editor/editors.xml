@@ -1,0 +1,26 @@
+<editors>
+   <editor id="bool">
+      <range uom="2" min="0" max="1" step="1"/>
+   </editor>
+   <editor id="connect">
+      <range uom="25" subset="0,1,2" nls="connect"/>
+   </editor>
+   <editor id="count">
+      <range uom="56" min="0" max="255" step="1"/>
+   </editor>
+   <editor id="ppm">
+      <range uom="54" min="0" max="9999" step="1"/>
+   </editor>
+   <editor id="unixtime">
+      <range uom="151" min="0" max="2147483647" step="1"/>
+   </editor>
+   <editor id="battery">
+      <range uom="25" subset="0,1,2,3" nls="battery"/>
+   </editor>
+   <editor id="iaq">
+      <range uom="25" subset="0,1,2,3,4" nls="iaq"/>
+   </editor>
+   <editor id="modeltype">
+      <range uom="25" subset="0,1,2,3,4,5" nls="modeltype"/>
+   </editor>
+</editors>

@@ -76,6 +76,39 @@
           }
         }
       ]
+    },
+    {
+      "id": "iaq",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2,3,4",
+          "names": {
+            "0": "Unknown",
+            "1": "Very Bad",
+            "2": "Bad",
+            "3": "Moderate",
+            "4": "Good"
+          }
+        }
+      ]
+    },
+    {
+      "id": "modeltype",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "0,1,2,3,4,5",
+          "names": {
+            "0": "Unknown",
+            "1": "Smoke+IAQ (wifiiaqdetector)",
+            "2": "Smoke (wifidetector)",
+            "3": "CO (cowifidetector)",
+            "4": "Water Leak (waterleakdetector)",
+            "5": "DETECT (EssWFAC)"
+          }
+        }
+      ]
     }
   ],
   "nodedefs": [
@@ -149,6 +182,16 @@
           "name": "CO Alarm"
         },
         {
+          "id": "GV2",
+          "editor": "bool",
+          "name": "Smoke Hushed"
+        },
+        {
+          "id": "GV3",
+          "editor": "bool",
+          "name": "Lost"
+        },
+        {
           "id": "SMOKED",
           "editor": "count",
           "name": "Smoke Level"
@@ -162,6 +205,51 @@
           "id": "GV4",
           "editor": "battery",
           "name": "Battery State"
+        },
+        {
+          "id": "GV5",
+          "editor": "bool",
+          "name": "Low Battery Alarm"
+        },
+        {
+          "id": "GV6",
+          "editor": "bool",
+          "name": "Water Alarm"
+        },
+        {
+          "id": "GV7",
+          "editor": "bool",
+          "name": "Freeze Alarm"
+        },
+        {
+          "id": "GV8",
+          "editor": "bool",
+          "name": "Contact Lost"
+        },
+        {
+          "id": "GV9",
+          "editor": "count",
+          "name": "MB Model"
+        },
+        {
+          "id": "GV10",
+          "editor": "count",
+          "name": "Life Remaining"
+        },
+        {
+          "id": "GV11",
+          "editor": "count",
+          "name": "Battery Level"
+        },
+        {
+          "id": "GV12",
+          "editor": "iaq",
+          "name": "Overall IAQ Status"
+        },
+        {
+          "id": "GV13",
+          "editor": "modeltype",
+          "name": "Model Type"
         },
         {
           "id": "TIME",

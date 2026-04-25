@@ -251,10 +251,54 @@ class KiddeController(udi_interface.Node):
 
 # Battery state string → integer mapping for GV4
 _BATTERY_MAP = {
+    "good":     1,
     "ok":       1,
     "low":      2,
     "critical": 3,
 }
+
+_IAQ_MAP = {
+    "very bad": 1,
+    "bad":      2,
+    "moderate": 3,
+    "good":     4,
+}
+
+_MODEL_TYPE_MAP = {
+    "wifiiaqdetector":   1,
+    "wifidetector":      2,
+    "cowifidetector":    3,
+    "waterleakdetector": 4,
+    "esswfac":           5,
+}
+
+
+def _value_or_self(value):
+    """Return scalar value, unwrapping Kidde {value, Unit, status} objects when present."""
+    if isinstance(value, dict):
+        return value.get("value")
+    return value
+
+
+def _to_int(value, default: int = 0) -> int:
+    value = _value_or_self(value)
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _to_bool(value) -> int:
+    value = _value_or_self(value)
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (int, float)):
+        return 1 if value != 0 else 0
+    if isinstance(value, str):
+        return 1 if value.strip().lower() in {"1", "true", "yes", "on"} else 0
+    return 0
 
 
 class KiddeAlarmNode(udi_interface.Node):
@@ -265,9 +309,20 @@ class KiddeAlarmNode(udi_interface.Node):
         {"driver": "ST",     "value": 0, "uom": 2},    # Device online (boolean)
         {"driver": "GV0",   "value": 0, "uom": 2},    # Smoke alarm (boolean)
         {"driver": "GV1",   "value": 0, "uom": 2},    # CO alarm (boolean)
+        {"driver": "GV2",   "value": 0, "uom": 2},    # Smoke hushed
+        {"driver": "GV3",   "value": 0, "uom": 2},    # Lost
         {"driver": "SMOKED","value": 0, "uom": 56},   # Smoke level (raw)
         {"driver": "CO",    "value": 0, "uom": 54},   # CO level (PPM)
         {"driver": "GV4",   "value": 0, "uom": 25},   # Battery state (battery enum)
+        {"driver": "GV5",   "value": 0, "uom": 2},    # Low battery alarm
+        {"driver": "GV6",   "value": 0, "uom": 2},    # Water alarm
+        {"driver": "GV7",   "value": 0, "uom": 2},    # Freeze alarm
+        {"driver": "GV8",   "value": 0, "uom": 2},    # Contact lost
+        {"driver": "GV9",   "value": 0, "uom": 56},   # MB model (DETECT indicator)
+        {"driver": "GV10",  "value": 0, "uom": 56},   # Life remaining (days/weeks)
+        {"driver": "GV11",  "value": 0, "uom": 56},   # Battery level (%)
+        {"driver": "GV12",  "value": 0, "uom": 25},   # IAQ status
+        {"driver": "GV13",  "value": 0, "uom": 25},   # Model type
         {"driver": "TIME",  "value": 0, "uom": 151},  # Last seen (unix time)
     ]
 
@@ -280,11 +335,30 @@ class KiddeAlarmNode(udi_interface.Node):
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
-        online      = 0 if device.get("lost", False) else 1
-        smoke       = 1 if device.get("smoke_alarm", False) else 0
-        co          = 1 if device.get("co_alarm",    False) else 0
-        smoke_level = int(device.get("smoke_level", 0) or 0)
-        co_level    = int(device.get("co_level",    0) or 0)
+        lost        = _to_bool(device.get("lost", False))
+        online      = 0 if lost else 1
+        smoke       = _to_bool(device.get("smoke_alarm", False))
+        co          = _to_bool(device.get("co_alarm", False))
+        smoke_hush  = _to_bool(device.get("smoke_hushed", False))
+        low_batt    = _to_bool(device.get("low_battery_alarm", False))
+        water_alarm = _to_bool(device.get("water_alarm", False))
+        low_temp    = _to_bool(device.get("low_temp_alarm", False))
+        contact_lost = _to_bool(device.get("contact_lost", False))
+
+        smoke_level = _to_int(device.get("smoke_level", 0), 0)
+        co_level    = _to_int(device.get("co_level", None), 0)
+        if co_level == 0:
+            # DETECT series may report CO value under co_ppm.
+            co_level = _to_int(device.get("co_ppm", 0), 0)
+
+        mb_model = _to_int(device.get("mb_model", 0), 0)
+        life_remaining = _to_int(device.get("life", 0), 0)
+        battery_level = _to_int(device.get("battery_level", 0), 0)
+        iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
+        iaq_status = _IAQ_MAP.get(iaq_raw, 0)
+        model_raw = str(device.get("model", "") or "").strip().lower()
+        model_type = _MODEL_TYPE_MAP.get(model_raw, 0)
+
         battery_raw = str(device.get("battery_state", "") or "").lower()
         battery_int = _BATTERY_MAP.get(battery_raw, 0)
         last_seen   = _parse_last_seen(device.get("last_seen"))
@@ -292,9 +366,20 @@ class KiddeAlarmNode(udi_interface.Node):
         self.setDriver("ST",     online)
         self.setDriver("GV0",   smoke)
         self.setDriver("GV1",   co)
+        self.setDriver("GV2",   smoke_hush)
+        self.setDriver("GV3",   lost)
         self.setDriver("SMOKED",smoke_level)
         self.setDriver("CO",    co_level)
         self.setDriver("GV4",   battery_int)
+        self.setDriver("GV5",   low_batt)
+        self.setDriver("GV6",   water_alarm)
+        self.setDriver("GV7",   low_temp)
+        self.setDriver("GV8",   contact_lost)
+        self.setDriver("GV9",   mb_model)
+        self.setDriver("GV10",  life_remaining)
+        self.setDriver("GV11",  battery_level)
+        self.setDriver("GV12",  iaq_status)
+        self.setDriver("GV13",  model_type)
         self.setDriver("TIME",  last_seen)
 
         # Report DON on alarm onset, DOF on alarm clearance
@@ -321,6 +406,8 @@ class KiddeAlarmNode(udi_interface.Node):
             KiddeCommand.HUSH,
         )
         LOGGER.info("HUSH %s/%s -> %s", self.location_id, self.device_id, ok)
+        if ok:
+            self.controller._refresh_status()
 
     commands = {
         "HUSH": hush,

@@ -128,7 +128,7 @@ class KiddeAsyncAdapter:
     async def _refresh_async(self, email: str, password: str) -> Dict[str, Any]:
         LOGGER.debug("Refreshing Kidde dataset for %s", _redact_email(email))
         client = await self._ensure_client(email=email, password=password)
-        dataset = await client.get_data(get_devices=True, get_events=True)
+        dataset = await client.get_data(get_devices=True, get_events=False)
         devices = dataset.devices or {}
         events = dataset.events or {}
         LOGGER.debug(
