@@ -228,8 +228,8 @@
         },
         {
           "id": "GV9",
-          "editor": "count",
-          "name": "MB Model"
+          "editor": "modeltype",
+          "name": "Model"
         },
         {
           "id": "GV10",
@@ -245,11 +245,6 @@
           "id": "GV12",
           "editor": "iaq",
           "name": "Overall IAQ Status"
-        },
-        {
-          "id": "GV13",
-          "editor": "modeltype",
-          "name": "Model Type"
         },
         {
           "id": "TIME",

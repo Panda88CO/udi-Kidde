@@ -337,11 +337,10 @@ class KiddeAlarmNode(udi_interface.Node):
         {"driver": "GV6",   "value": 0, "uom": 2},    # Water alarm
         {"driver": "GV7",   "value": 0, "uom": 2},    # Freeze alarm
         {"driver": "GV8",   "value": 0, "uom": 2},    # Contact lost
-        {"driver": "GV9",   "value": 0, "uom": 56},   # MB model (DETECT indicator)
+        {"driver": "GV9",   "value": 0, "uom": 25},   # Model
         {"driver": "GV10",  "value": 0, "uom": 56},   # Life remaining (days/weeks)
         {"driver": "GV11",  "value": 0, "uom": 56},   # Battery level (%)
         {"driver": "GV12",  "value": 0, "uom": 25},   # IAQ status
-        {"driver": "GV13",  "value": 0, "uom": 25},   # Model type
         {"driver": "TIME",  "value": 0, "uom": 151},  # Last seen (unix time)
     ]
 
@@ -369,8 +368,6 @@ class KiddeAlarmNode(udi_interface.Node):
         if co_level == 0:
             # DETECT series may report CO value under co_ppm.
             co_level = _to_int(device.get("co_ppm", 0), 0)
-
-        mb_model = _to_int(device.get("mb_model", 0), 0)
         life_remaining = _to_int(device.get("life", 0), 0)
         battery_level = _to_int(device.get("battery_level", 0), 0)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
@@ -394,11 +391,10 @@ class KiddeAlarmNode(udi_interface.Node):
         self.setDriver("GV6",   water_alarm)
         self.setDriver("GV7",   low_temp)
         self.setDriver("GV8",   contact_lost)
-        self.setDriver("GV9",   mb_model)
+        self.setDriver("GV9",   model_type)
         self.setDriver("GV10",  life_remaining)
         self.setDriver("GV11",  battery_level)
         self.setDriver("GV12",  iaq_status)
-        self.setDriver("GV13",  model_type)
         self.setDriver("TIME",  last_seen)
 
         # Report DON on alarm onset, DOF on alarm clearance
