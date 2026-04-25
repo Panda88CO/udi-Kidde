@@ -152,7 +152,7 @@
         "accepts": [
           {
             "id": "UPDATE",
-            "name": "Reload Configuration"
+            "name": "Force Data Update"
           }
         ]
       },

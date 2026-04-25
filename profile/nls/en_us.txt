@@ -28,7 +28,7 @@ ST-nlskiddealarm-TIME-NAME=Last Seen
 
 CMD-nlssetup-DON-NAME=Heartbeat On
 CMD-nlssetup-DOF-NAME=Heartbeat Off
-CMD-nlssetup-UPDATE-NAME=Reload Configuration
+CMD-nlssetup-UPDATE-NAME=Force Data Update
 CMD-nlskiddealarm-DON-NAME=Alarm Active
 CMD-nlskiddealarm-DOF-NAME=Alarm Cleared
 CMD-nlskiddealarm-HUSH-NAME=Hush Alarm

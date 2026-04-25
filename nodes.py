@@ -213,23 +213,42 @@ class KiddeController(udi_interface.Node):
 
     def _reconcile_nodes(self, devices: dict) -> None:
         """Create child nodes for newly-discovered devices and update existing ones."""
+        used_addresses = {self.address}
+        used_addresses.update(node.address for node in self._alarm_nodes.values())
+
         for device_id, device in devices.items():
             device_id = int(device_id)
-            address = f"d{device_id}"
             if device_id not in self._alarm_nodes:
                 label = (
                     device.get("label")
                     or device.get("announcement")
                     or f"Device {device_id}"
                 )
+                valid_name = self.poly.getValidName(str(label))
+                if not valid_name:
+                    valid_name = f"Device {device_id}"
+
+                # Use device id as the source for address generation.
+                # getValidAddress enforces PG3 format/length constraints.
+                address_seed = f"d{device_id}"
+                valid_address = self.poly.getValidAddress(address_seed)
+                if valid_address in used_addresses:
+                    # Preserve determinism while avoiding collisions after sanitization/truncation.
+                    for idx in range(1, 100):
+                        candidate = self.poly.getValidAddress(f"{address_seed}{idx}")
+                        if candidate not in used_addresses:
+                            valid_address = candidate
+                            break
+
                 location_id = int(device.get("location_id", 0))
                 alarm_node = KiddeAlarmNode(
-                    self.poly, self.address, address, label,
+                    self.poly, self.address, valid_address, valid_name,
                     location_id=location_id, device_id=device_id,
                 )
                 alarm_node.controller = self
                 self.poly.addNode(alarm_node)
                 self._alarm_nodes[device_id] = alarm_node
+                used_addresses.add(valid_address)
             self._alarm_nodes[device_id].update_from_device(device)
 
     def discover(self, *_):

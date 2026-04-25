@@ -131,6 +131,16 @@ class KiddeAsyncAdapter:
         dataset = await client.get_data(get_devices=True, get_events=False)
         devices = dataset.devices or {}
         events = dataset.events or {}
+        if LOGGER.isEnabledFor(10):
+            payload = {
+                "devices": devices,
+                "events": events,
+            }
+            try:
+                pretty_payload = json.dumps(payload, indent=2, sort_keys=True, default=str)
+            except Exception:
+                pretty_payload = json.dumps({"payload": str(payload)}, indent=2, sort_keys=True)
+            LOGGER.debug("Kidde refresh payload JSON:\n%s", pretty_payload)
         LOGGER.debug(
             "Kidde dataset refresh complete: devices=%d events=%d alarms=%d",
             len(devices),
