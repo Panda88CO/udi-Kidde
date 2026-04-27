@@ -114,10 +114,8 @@
       "id": "minuteofday",
       "ranges": [
         {
-          "uom": "145",
-          "min": 0,
-          "max": 1439,
-          "step": 1
+          "uom": "145"
+          
         }
       ]
     }
