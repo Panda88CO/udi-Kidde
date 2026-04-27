@@ -24,6 +24,229 @@ def _parse_last_seen(s) -> int:
 LOGGER = udi_interface.LOGGER
 Custom = udi_interface.Custom
 
+
+def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
+    bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
+    return f"kiddealarm_{bitmask}"
+
+
+def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
+    features = []
+    if supports_smoke:
+        features.append("Smoke")
+    if supports_co:
+        features.append("CO")
+    if supports_iaq:
+        features.append("Air Quality")
+    if not features:
+        features.append("Base")
+    return "Kidde Alarm (" + "+".join(features) + ")"
+
+
+def _profile_editors() -> list[dict]:
+    return [
+        {
+            "id": "bool",
+            "ranges": [
+                {
+                    "uom": "2",
+                    "min": 0,
+                    "max": 1,
+                    "step": 1,
+                    "names": {"0": "No", "1": "Yes"},
+                }
+            ],
+        },
+        {
+            "id": "connect",
+            "ranges": [
+                {
+                    "uom": "25",
+                    "subset": "0,1,2",
+                    "names": {
+                        "0": "Disconnected",
+                        "1": "Connected",
+                        "2": "Failed",
+                    },
+                }
+            ],
+        },
+        {
+            "id": "count",
+            "ranges": [
+                {
+                    "uom": "56",
+                    "min": 0,
+                    "max": 255,
+                    "step": 1,
+                }
+            ],
+        },
+        {
+            "id": "ppm",
+            "ranges": [
+                {
+                    "uom": "54",
+                    "min": 0,
+                    "max": 9999,
+                    "step": 1,
+                }
+            ],
+        },
+        {
+            "id": "unixtime",
+            "ranges": [
+                {
+                    "uom": "151",
+                    "min": 0,
+                    "max": 2147483647,
+                    "step": 1,
+                }
+            ],
+        },
+        {
+            "id": "battery",
+            "ranges": [
+                {
+                    "uom": "25",
+                    "subset": "0,1,2,3",
+                    "names": {
+                        "0": "Unknown",
+                        "1": "OK",
+                        "2": "Low",
+                        "3": "Critical",
+                    },
+                }
+            ],
+        },
+        {
+            "id": "iaq",
+            "ranges": [
+                {
+                    "uom": "25",
+                    "subset": "0,1,2,3,4",
+                    "names": {
+                        "0": "Unknown",
+                        "1": "Very Bad",
+                        "2": "Bad",
+                        "3": "Moderate",
+                        "4": "Good",
+                    },
+                }
+            ],
+        },
+        {
+            "id": "modeltype",
+            "ranges": [
+                {
+                    "uom": "25",
+                    "subset": "0,1,2,3,4,5",
+                    "names": {
+                        "0": "Unknown",
+                        "1": "Smoke+IAQ (wifiiaqdetector)",
+                        "2": "Smoke (wifidetector)",
+                        "3": "CO (cowifidetector)",
+                        "4": "Water Leak (waterleakdetector)",
+                        "5": "DETECT (EssWFAC)",
+                    },
+                }
+            ],
+        },
+    ]
+
+
+def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> list[dict]:
+    props = [
+        {"id": "ST", "editor": "bool", "name": "Device Online"},
+        {"id": "GV3", "editor": "bool", "name": "Lost"},
+        {"id": "GV4", "editor": "battery", "name": "Battery State"},
+        {"id": "GV5", "editor": "bool", "name": "Low Battery Alarm"},
+        {"id": "GV6", "editor": "bool", "name": "Water Alarm"},
+        {"id": "GV7", "editor": "bool", "name": "Freeze Alarm"},
+        {"id": "GV8", "editor": "bool", "name": "Contact Lost"},
+        {"id": "GV9", "editor": "modeltype", "name": "Model"},
+        {"id": "GV10", "editor": "count", "name": "Life Remaining"},
+        {"id": "GV11", "editor": "count", "name": "Battery Level"},
+        {"id": "TIME", "editor": "unixtime", "name": "Last Seen"},
+    ]
+    if supports_smoke:
+        props.extend(
+            [
+                {"id": "GV0", "editor": "bool", "name": "Smoke Alarm"},
+                {"id": "GV2", "editor": "bool", "name": "Smoke Hushed"},
+                {"id": "SMOKED", "editor": "count", "name": "Smoke Level"},
+            ]
+        )
+    if supports_co:
+        props.extend(
+            [
+                {"id": "GV1", "editor": "bool", "name": "CO Alarm"},
+                {"id": "CO", "editor": "ppm", "name": "CO Level"},
+            ]
+        )
+    if supports_iaq:
+        props.append({"id": "GV12", "editor": "iaq", "name": "Overall IAQ Status"})
+    props.sort(key=lambda item: item["id"])
+    return props
+
+
+def _alarm_nodedefs() -> list[dict]:
+    nodedefs = []
+    for smoke in (False, True):
+        for co in (False, True):
+            for iaq in (False, True):
+                nodedefs.append(
+                    {
+                        "id": _alarm_nodedef_id(smoke, co, iaq),
+                        "name": _alarm_nodedef_name(smoke, co, iaq),
+                        "icon": "GenericCtl",
+                        "properties": _alarm_properties(smoke, co, iaq),
+                        "cmds": {
+                            "sends": [
+                                {"id": "DON", "name": "Alarm Active"},
+                                {"id": "DOF", "name": "Alarm Cleared"},
+                            ],
+                            "accepts": [{"id": "HUSH", "name": "Hush Alarm"}],
+                        },
+                        "links": {"ctl": [], "rsp": []},
+                    }
+                )
+    return nodedefs
+
+
+def _dynamic_profile_payload() -> dict:
+    return {
+        "delete": {
+            "editors": ["*"],
+            "nodedefs": ["*"],
+            "linkdefs": ["*"],
+        },
+        "editors": _profile_editors(),
+        "nodedefs": [
+            {
+                "id": "setup",
+                "name": "Kidde Monitors",
+                "icon": "GenericCtl",
+                "properties": [
+                    {"id": "ST", "editor": "connect", "name": "Node Server Status"},
+                    {"id": "GV0", "editor": "count", "name": "Number of Alarms"},
+                    {"id": "GV1", "editor": "bool", "name": "Online Status"},
+                    {"id": "TIME", "editor": "unixtime", "name": "Last Update Time"},
+                ],
+                "cmds": {
+                    "sends": [
+                        {"id": "DON", "name": "Heartbeat On"},
+                        {"id": "DOF", "name": "Heartbeat Off"},
+                    ],
+                    "accepts": [{"id": "UPDATE", "name": "Force Data Update"}],
+                },
+                "links": {"ctl": [], "rsp": []},
+            },
+            *_alarm_nodedefs(),
+        ],
+        "linkdefs": [],
+    }
+
 class KiddeController(udi_interface.Node):
     id = "setup"
     drivers = [
@@ -62,9 +285,23 @@ class KiddeController(udi_interface.Node):
         self.poly.subscribe(self.poly.LOGLEVEL, self.handle_log_level)
         self.poly.subscribe(self.poly.DISCOVER, self.discover)
 
-        self.poly.updateProfile()
+        self._update_dynamic_profile()
         self.poly.ready()
         self.poly.addNode(self, conn_status="ST", rename=True)
+
+    def _update_dynamic_profile(self) -> None:
+        updater = getattr(self.poly, "updateJsonProfile", None)
+        if not callable(updater):
+            LOGGER.error("updateJsonProfile is not available; dynamic profiles are required")
+            self.poly.Notices["profile"] = "Dynamic profiles require udi_interface/PG3x support."
+            return
+        try:
+            updater(_dynamic_profile_payload(), {"waitResponse": True})
+            LOGGER.info("Dynamic profile updated with 8 Kidde alarm nodedef variants")
+            self.poly.Notices.delete("profile")
+        except Exception:
+            LOGGER.exception("Dynamic profile update failed")
+            self.poly.Notices["profile"] = "Dynamic profile update failed. Check PG3x/IoX compatibility."
 
     def start(self):
         self._started = True
@@ -215,10 +452,39 @@ class KiddeController(udi_interface.Node):
         """Create child nodes for newly-discovered devices and update existing ones."""
         used_addresses = {self.address}
         used_addresses.update(node.address for node in self._alarm_nodes.values())
+        expected_device_ids: set[int] = set()
 
         for device_id, device in devices.items():
             device_id = int(device_id)
-            if device_id not in self._alarm_nodes:
+            supports_smoke, supports_co, supports_iaq = _device_capabilities(device)
+            expected_device_ids.add(device_id)
+
+            expected_nodedef = _alarm_nodedef_id(supports_smoke, supports_co, supports_iaq)
+            LOGGER.debug(
+                "Discovered Kidde device_id=%s model=%s caps=%s -> smoke=%s co=%s iaq=%s nodedef=%s",
+                device_id,
+                device.get("model"),
+                device.get("capabilities"),
+                supports_smoke,
+                supports_co,
+                supports_iaq,
+                expected_nodedef,
+            )
+            existing = self._alarm_nodes.get(device_id)
+
+            if existing is not None and existing.id != expected_nodedef:
+                LOGGER.info(
+                    "Replacing node for device_id=%s due to capability change (%s -> %s)",
+                    device_id,
+                    existing.id,
+                    expected_nodedef,
+                )
+                self.poly.delNode(existing.address)
+                used_addresses.discard(existing.address)
+                del self._alarm_nodes[device_id]
+                existing = None
+
+            if existing is None:
                 label = (
                     device.get("label")
                     or device.get("announcement")
@@ -244,12 +510,23 @@ class KiddeController(udi_interface.Node):
                 alarm_node = KiddeAlarmNode(
                     self.poly, self.address, valid_address, valid_name,
                     location_id=location_id, device_id=device_id,
+                    supports_smoke=supports_smoke,
+                    supports_co=supports_co,
+                    supports_iaq=supports_iaq,
                 )
                 alarm_node.controller = self
                 self.poly.addNode(alarm_node)
                 self._alarm_nodes[device_id] = alarm_node
                 used_addresses.add(valid_address)
             self._alarm_nodes[device_id].update_from_device(device)
+
+        for known_device_id in list(self._alarm_nodes.keys()):
+            if known_device_id in expected_device_ids:
+                continue
+            stale = self._alarm_nodes[known_device_id]
+            LOGGER.info("Removing stale Kidde node device_id=%s address=%s", known_device_id, stale.address)
+            self.poly.delNode(stale.address)
+            del self._alarm_nodes[known_device_id]
 
     def discover(self, *_):
         self._refresh_status()
@@ -292,6 +569,30 @@ _MODEL_TYPE_MAP = {
 }
 
 
+def _device_capabilities(device: dict) -> tuple[bool, bool, bool]:
+    caps = set()
+    raw_caps = device.get("capabilities", [])
+    if isinstance(raw_caps, list):
+        caps = {str(item).strip().lower() for item in raw_caps if str(item).strip()}
+
+    model_raw = str(device.get("model", "") or "").strip().lower()
+
+    if caps:
+        supports_smoke = "smoke" in caps
+        supports_co = "co" in caps
+        supports_iaq = bool({"iaq", "air_quality", "airquality"}.intersection(caps))
+    else:
+        supports_smoke = any(key in device for key in ("smoke_alarm", "smoke_hushed", "smoke_level"))
+        supports_co = any(key in device for key in ("co_alarm", "co_level", "co_ppm"))
+        supports_iaq = "overall_iaq_status" in device
+
+    # Model-based fallback when capabilities are incomplete.
+    if model_raw == "wifiiaqdetector":
+        supports_iaq = True
+
+    return supports_smoke, supports_co, supports_iaq
+
+
 def _value_or_self(value):
     """Return scalar value, unwrapping Kidde {value, Unit, status} objects when present."""
     if isinstance(value, dict):
@@ -323,55 +624,88 @@ def _to_bool(value) -> int:
 class KiddeAlarmNode(udi_interface.Node):
     """Child node representing a single Kidde smoke/CO detector."""
 
-    id = "kiddealarm"
-    drivers = [
-        {"driver": "ST",     "value": 0, "uom": 2},    # Device online (boolean)
-        {"driver": "GV0",   "value": 0, "uom": 2},    # Smoke alarm (boolean)
-        {"driver": "GV1",   "value": 0, "uom": 2},    # CO alarm (boolean)
-        {"driver": "GV2",   "value": 0, "uom": 2},    # Smoke hushed
-        {"driver": "GV3",   "value": 0, "uom": 2},    # Lost
-        {"driver": "SMOKED","value": 0, "uom": 56},   # Smoke level (raw)
-        {"driver": "CO",    "value": 0, "uom": 54},   # CO level (PPM)
-        {"driver": "GV4",   "value": 0, "uom": 25},   # Battery state (battery enum)
-        {"driver": "GV5",   "value": 0, "uom": 2},    # Low battery alarm
-        {"driver": "GV6",   "value": 0, "uom": 2},    # Water alarm
-        {"driver": "GV7",   "value": 0, "uom": 2},    # Freeze alarm
-        {"driver": "GV8",   "value": 0, "uom": 2},    # Contact lost
-        {"driver": "GV9",   "value": 0, "uom": 25},   # Model
-        {"driver": "GV10",  "value": 0, "uom": 56},   # Life remaining (days/weeks)
-        {"driver": "GV11",  "value": 0, "uom": 56},   # Battery level (%)
-        {"driver": "GV12",  "value": 0, "uom": 25},   # IAQ status
-        {"driver": "TIME",  "value": 0, "uom": 151},  # Last seen (unix time)
-    ]
-
-    def __init__(self, polyglot, primary, address, name, location_id, device_id):
+    def __init__(
+        self,
+        polyglot,
+        primary,
+        address,
+        name,
+        location_id,
+        device_id,
+        supports_smoke: bool,
+        supports_co: bool,
+        supports_iaq: bool,
+    ):
+        self.supports_smoke = bool(supports_smoke)
+        self.supports_co = bool(supports_co)
+        self.supports_iaq = bool(supports_iaq)
+        self.id = _alarm_nodedef_id(self.supports_smoke, self.supports_co, self.supports_iaq)
+        self.drivers = self._build_drivers()
         super().__init__(polyglot, primary, address, name)
         self.location_id = location_id
         self.device_id = device_id
         self.controller: "KiddeController | None" = None
         self._alarm_active: bool = False  # tracks last reported alarm state
+        self._driver_ids = {driver["driver"] for driver in self.drivers}
+
+    def _build_drivers(self) -> list[dict]:
+        drivers = [
+            {"driver": "ST", "value": 0, "uom": 2},
+            {"driver": "GV3", "value": 0, "uom": 2},
+            {"driver": "GV4", "value": 0, "uom": 25},
+            {"driver": "GV5", "value": 0, "uom": 2},
+            {"driver": "GV6", "value": 0, "uom": 2},
+            {"driver": "GV7", "value": 0, "uom": 2},
+            {"driver": "GV8", "value": 0, "uom": 2},
+            {"driver": "GV9", "value": 0, "uom": 25},
+            {"driver": "GV10", "value": 0, "uom": 56},
+            {"driver": "GV11", "value": 0, "uom": 56},
+            {"driver": "TIME", "value": 0, "uom": 151},
+        ]
+        if self.supports_smoke:
+            drivers.extend(
+                [
+                    {"driver": "GV0", "value": 0, "uom": 2},
+                    {"driver": "GV2", "value": 0, "uom": 2},
+                    {"driver": "SMOKED", "value": 0, "uom": 56},
+                ]
+            )
+        if self.supports_co:
+            drivers.extend(
+                [
+                    {"driver": "GV1", "value": 0, "uom": 2},
+                    {"driver": "CO", "value": 0, "uom": 54},
+                ]
+            )
+        if self.supports_iaq:
+            drivers.append({"driver": "GV12", "value": 0, "uom": 25})
+        return drivers
+
+    def _set_if_supported(self, driver: str, value) -> None:
+        if driver in self._driver_ids:
+            self.setDriver(driver, value)
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
         lost        = _to_bool(device.get("lost", False))
         online      = 0 if lost else 1
-        smoke       = _to_bool(device.get("smoke_alarm", False))
-        co          = _to_bool(device.get("co_alarm", False))
-        smoke_hush  = _to_bool(device.get("smoke_hushed", False))
+        smoke       = _to_bool(device.get("smoke_alarm", False)) if self.supports_smoke else 0
+        co          = _to_bool(device.get("co_alarm", False)) if self.supports_co else 0
+        smoke_hush  = _to_bool(device.get("smoke_hushed", False)) if self.supports_smoke else 0
         low_batt    = _to_bool(device.get("low_battery_alarm", False))
         water_alarm = _to_bool(device.get("water_alarm", False))
         low_temp    = _to_bool(device.get("low_temp_alarm", False))
         contact_lost = _to_bool(device.get("contact_lost", False))
 
-        smoke_level = _to_int(device.get("smoke_level", 0), 0)
-        co_level    = _to_int(device.get("co_level", None), 0)
-        if co_level == 0:
+        smoke_level = _to_int(device.get("smoke_level", 0), 0) if self.supports_smoke else 0
+        co_level    = _to_int(device.get("co_level", None), 0) if self.supports_co else 0
+        if self.supports_co and co_level == 0:
             # DETECT series may report CO value under co_ppm.
             co_level = _to_int(device.get("co_ppm", 0), 0)
         life_remaining = _to_int(device.get("life", 0), 0)
         battery_level = _to_int(device.get("battery_level", 0), 0)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
-        iaq_status = _IAQ_MAP.get(iaq_raw, 0)
+        iaq_status = _IAQ_MAP.get(iaq_raw, 0) if self.supports_iaq else 0
         model_raw = str(device.get("model", "") or "").strip().lower()
         model_type = _MODEL_TYPE_MAP.get(model_raw, 0)
 
@@ -379,23 +713,23 @@ class KiddeAlarmNode(udi_interface.Node):
         battery_int = _BATTERY_MAP.get(battery_raw, 0)
         last_seen   = _parse_last_seen(device.get("last_seen"))
 
-        self.setDriver("ST",     online)
-        self.setDriver("GV0",   smoke)
-        self.setDriver("GV1",   co)
-        self.setDriver("GV2",   smoke_hush)
-        self.setDriver("GV3",   lost)
-        self.setDriver("SMOKED",smoke_level)
-        self.setDriver("CO",    co_level)
-        self.setDriver("GV4",   battery_int)
-        self.setDriver("GV5",   low_batt)
-        self.setDriver("GV6",   water_alarm)
-        self.setDriver("GV7",   low_temp)
-        self.setDriver("GV8",   contact_lost)
-        self.setDriver("GV9",   model_type)
-        self.setDriver("GV10",  life_remaining)
-        self.setDriver("GV11",  battery_level)
-        self.setDriver("GV12",  iaq_status)
-        self.setDriver("TIME",  last_seen)
+        self._set_if_supported("ST", online)
+        self._set_if_supported("GV0", smoke)
+        self._set_if_supported("GV1", co)
+        self._set_if_supported("GV2", smoke_hush)
+        self._set_if_supported("GV3", lost)
+        self._set_if_supported("SMOKED", smoke_level)
+        self._set_if_supported("CO", co_level)
+        self._set_if_supported("GV4", battery_int)
+        self._set_if_supported("GV5", low_batt)
+        self._set_if_supported("GV6", water_alarm)
+        self._set_if_supported("GV7", low_temp)
+        self._set_if_supported("GV8", contact_lost)
+        self._set_if_supported("GV9", model_type)
+        self._set_if_supported("GV10", life_remaining)
+        self._set_if_supported("GV11", battery_level)
+        self._set_if_supported("GV12", iaq_status)
+        self._set_if_supported("TIME", last_seen)
 
         # Report DON on alarm onset, DOF on alarm clearance
         alarm_now = bool(smoke or co)

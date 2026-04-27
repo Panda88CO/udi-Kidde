@@ -2,9 +2,9 @@
 """Generate PG3-compatible static profile artifacts from a single JSON source.
 
 Reads:
-    profile_source/profile.json -> profile/nodedef/nodedefs.xml
-                                                             -> profile/editor/editors.xml
-                                                             -> profile/nls/en_us.txt
+    profile_source/profile.json -> profile_static/nodedef/nodedefs.xml
+                                                             -> profile_static/editor/editors.xml
+                                                             -> profile_static/nls/en_us.txt
 
 Run from the repository root:
     python tools/build_profile.py
@@ -21,7 +21,7 @@ from xml.dom import minidom
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC  = ROOT / "profile_source"
-DEST = ROOT / "profile"
+DEST = ROOT / "profile_static"
 PROFILE_FILE = SRC / "profile.json"
 
 
