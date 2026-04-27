@@ -710,6 +710,16 @@ def _to_minute_of_day(value, default: int = 0) -> int:
     return max(0, min(1439, _to_int(value, default)))
 
 
+def _minute_of_day_payload(raw_value) -> tuple[int | None, str | None]:
+    """Return (minutes, HH:MM text) or (None, None) when the source is missing/invalid."""
+    value = _value_or_self(raw_value)
+    if value is None or value == "" or isinstance(value, bool):
+        return None, None
+
+    minutes = _to_minute_of_day(value, 0)
+    return minutes, f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 class KiddeAlarmNode(udi_interface.Node):
     """Child node representing a single Kidde smoke/CO detector."""
 
@@ -768,12 +778,12 @@ class KiddeAlarmNode(udi_interface.Node):
             drivers.append({"driver": "GV12", "value": 0, "uom": 25})
         return drivers
 
-    def _set_if_supported(self, driver: str, value, uom: int | None = None) -> None:
+    def _set_if_supported(self, driver: str, value, uom: int | None = None, text: str | None = None) -> None:
         if driver in self._driver_ids:
             if uom is None:
-                self.setDriver(driver, value)
+                self.setDriver(driver, value, text=text)
             else:
-                self.setDriver(driver, value, uom=uom)
+                self.setDriver(driver, value, uom=uom, text=text)
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
@@ -793,20 +803,20 @@ class KiddeAlarmNode(udi_interface.Node):
             (
                 device.get(key)
                 for key in ("no_chips_off", "no_chips_off_time", "noChipsOff", "no_chipsOff")
-                if key in device
+                if key in device and device.get(key) not in (None, "")
             ),
-            0,
+            None,
         )
         chips_on_raw = next(
             (
                 device.get(key)
                 for key in ("no_chips_on", "no_chips_on_time", "noChipsOn", "no_chipsOn")
-                if key in device
+                if key in device and device.get(key) not in (None, "")
             ),
-            0,
+            None,
         )
-        chips_off   = _to_minute_of_day(chips_off_raw, 0)
-        chips_on    = _to_minute_of_day(chips_on_raw, 0)
+        chips_off, chips_off_text = _minute_of_day_payload(chips_off_raw)
+        chips_on, chips_on_text = _minute_of_day_payload(chips_on_raw)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
         iaq_status = _IAQ_MAP.get(iaq_raw, 0) if self.supports_iaq else 0
         model_raw = str(device.get("model", "") or "").strip().lower()
@@ -828,12 +838,14 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV0",   smoke)
         self._set_if_supported("GV1",   co)
         self._set_if_supported("GV2",   smoke_hush)
-        self._set_if_supported("GV3",   chips_off, uom=145)
+        if chips_off is not None:
+            self._set_if_supported("GV3", chips_off, uom=145, text=chips_off_text)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
-        self._set_if_supported("GV6",   chips_on, uom=145)
+        if chips_on is not None:
+            self._set_if_supported("GV6", chips_on, uom=145, text=chips_on_text)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
