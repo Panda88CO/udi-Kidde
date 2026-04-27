@@ -112,7 +112,7 @@ def _profile_editors() -> list[dict]:
                     "subset": "0,1,2,3",
                     "names": {
                         "0": "Unknown",
-                        "1": "OK",
+                        "1": "Good",
                         "2": "Low",
                         "3": "Critical",
                     },
@@ -152,22 +152,39 @@ def _profile_editors() -> list[dict]:
                 }
             ],
         },
+        {
+            "id": "minuteofday",
+            "ranges": [
+                {
+                    "uom": "145",
+                    "min": 0,
+                    "max": 1439,
+                    "step": 1,
+                }
+            ],
+        },
     ]
 
 
 def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> list[dict]:
+    if supports_smoke and supports_co:
+        st_name = "Alarm (Smoke / CO)"
+    elif supports_smoke:
+        st_name = "Smoke Alarm"
+    elif supports_co:
+        st_name = "CO Alarm"
+    else:
+        st_name = "Alarm"
     props = [
-        {"id": "ST", "editor": "bool", "name": "Device Online"},
-        {"id": "GV3", "editor": "bool", "name": "Lost"},
-        {"id": "GV4", "editor": "battery", "name": "Battery State"},
-        {"id": "GV5", "editor": "bool", "name": "Low Battery Alarm"},
-        {"id": "GV6", "editor": "bool", "name": "Water Alarm"},
-        {"id": "GV7", "editor": "bool", "name": "Freeze Alarm"},
-        {"id": "GV8", "editor": "bool", "name": "Contact Lost"},
-        {"id": "GV9", "editor": "modeltype", "name": "Model"},
-        {"id": "GV10", "editor": "count", "name": "Life Remaining"},
-        {"id": "GV11", "editor": "count", "name": "Battery Level"},
-        {"id": "TIME", "editor": "unixtime", "name": "Last Seen"},
+        {"id": "ST",   "editor": "bool",        "name": st_name},
+        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Time"},
+        {"id": "GV4",  "editor": "battery",     "name": "Battery State"},
+        {"id": "GV5",  "editor": "bool",        "name": "Low Battery Alarm"},
+        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Time"},
+        {"id": "GV7",  "editor": "bool",        "name": "Online"},
+        {"id": "GV9",  "editor": "modeltype",   "name": "Model"},
+        {"id": "GV10", "editor": "count",       "name": "Life Remaining"},
+        {"id": "TIME", "editor": "unixtime",    "name": "Last Seen"},
     ]
     if supports_smoke:
         props.extend(
@@ -650,17 +667,15 @@ class KiddeAlarmNode(udi_interface.Node):
 
     def _build_drivers(self) -> list[dict]:
         drivers = [
-            {"driver": "ST", "value": 0, "uom": 2},
-            {"driver": "GV3", "value": 0, "uom": 2},
-            {"driver": "GV4", "value": 0, "uom": 25},
-            {"driver": "GV5", "value": 0, "uom": 2},
-            {"driver": "GV6", "value": 0, "uom": 2},
-            {"driver": "GV7", "value": 0, "uom": 2},
-            {"driver": "GV8", "value": 0, "uom": 2},
-            {"driver": "GV9", "value": 0, "uom": 25},
-            {"driver": "GV10", "value": 0, "uom": 56},
-            {"driver": "GV11", "value": 0, "uom": 56},
-            {"driver": "TIME", "value": 0, "uom": 151},
+            {"driver": "ST",   "value": 0, "uom": 2},    # Alarm active
+            {"driver": "GV3",  "value": 0, "uom": 145},  # Chips Off Time
+            {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
+            {"driver": "GV5",  "value": 0, "uom": 2},    # Low Battery Alarm
+            {"driver": "GV6",  "value": 0, "uom": 145},  # Chips On Time
+            {"driver": "GV7",  "value": 0, "uom": 2},    # Online
+            {"driver": "GV9",  "value": 0, "uom": 25},   # Model
+            {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
+            {"driver": "TIME", "value": 0, "uom": 151},  # Last Seen
         ]
         if self.supports_smoke:
             drivers.extend(
@@ -687,15 +702,11 @@ class KiddeAlarmNode(udi_interface.Node):
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
-        lost        = _to_bool(device.get("lost", False))
-        online      = 0 if lost else 1
+        online      = 0 if _to_bool(device.get("lost", False)) else 1
         smoke       = _to_bool(device.get("smoke_alarm", False)) if self.supports_smoke else 0
         co          = _to_bool(device.get("co_alarm", False)) if self.supports_co else 0
         smoke_hush  = _to_bool(device.get("smoke_hushed", False)) if self.supports_smoke else 0
         low_batt    = _to_bool(device.get("low_battery_alarm", False))
-        water_alarm = _to_bool(device.get("water_alarm", False))
-        low_temp    = _to_bool(device.get("low_temp_alarm", False))
-        contact_lost = _to_bool(device.get("contact_lost", False))
 
         smoke_level = _to_int(device.get("smoke_level", 0), 0) if self.supports_smoke else 0
         co_level    = _to_int(device.get("co_level", None), 0) if self.supports_co else 0
@@ -703,7 +714,8 @@ class KiddeAlarmNode(udi_interface.Node):
             # DETECT series may report CO value under co_ppm.
             co_level = _to_int(device.get("co_ppm", 0), 0)
         life_remaining = _to_int(device.get("life", 0), 0)
-        battery_level = _to_int(device.get("battery_level", 0), 0)
+        chips_off   = _to_int(device.get("no_chips_off", 0), 0)
+        chips_on    = _to_int(device.get("no_chips_on",  0), 0)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
         iaq_status = _IAQ_MAP.get(iaq_raw, 0) if self.supports_iaq else 0
         model_raw = str(device.get("model", "") or "").strip().lower()
@@ -713,24 +725,6 @@ class KiddeAlarmNode(udi_interface.Node):
         battery_int = _BATTERY_MAP.get(battery_raw, 0)
         last_seen   = _parse_last_seen(device.get("last_seen"))
 
-        self._set_if_supported("ST", online)
-        self._set_if_supported("GV0", smoke)
-        self._set_if_supported("GV1", co)
-        self._set_if_supported("GV2", smoke_hush)
-        self._set_if_supported("GV3", lost)
-        self._set_if_supported("SMOKED", smoke_level)
-        self._set_if_supported("CO", co_level)
-        self._set_if_supported("GV4", battery_int)
-        self._set_if_supported("GV5", low_batt)
-        self._set_if_supported("GV6", water_alarm)
-        self._set_if_supported("GV7", low_temp)
-        self._set_if_supported("GV8", contact_lost)
-        self._set_if_supported("GV9", model_type)
-        self._set_if_supported("GV10", life_remaining)
-        self._set_if_supported("GV11", battery_level)
-        self._set_if_supported("GV12", iaq_status)
-        self._set_if_supported("TIME", last_seen)
-
         # Report DON on alarm onset, DOF on alarm clearance
         alarm_now = bool(smoke or co)
         if alarm_now and not self._alarm_active:
@@ -738,6 +732,22 @@ class KiddeAlarmNode(udi_interface.Node):
         elif not alarm_now and self._alarm_active:
             self.reportCmd("DOF", 2)
         self._alarm_active = alarm_now
+
+        self._set_if_supported("ST",    1 if alarm_now else 0)
+        self._set_if_supported("GV0",   smoke)
+        self._set_if_supported("GV1",   co)
+        self._set_if_supported("GV2",   smoke_hush)
+        self._set_if_supported("GV3",   chips_off)
+        self._set_if_supported("SMOKED", smoke_level)
+        self._set_if_supported("CO",    co_level)
+        self._set_if_supported("GV4",   battery_int)
+        self._set_if_supported("GV5",   low_batt)
+        self._set_if_supported("GV6",   chips_on)
+        self._set_if_supported("GV7",   online)
+        self._set_if_supported("GV9",   model_type)
+        self._set_if_supported("GV10",  life_remaining)
+        self._set_if_supported("GV12",  iaq_status)
+        self._set_if_supported("TIME",  last_seen)
 
     def hush(self, command=None) -> None:
         """Send HUSH command to this device via the controller's adapter."""
