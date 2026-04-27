@@ -70,7 +70,7 @@
           "subset": "0,1,2,3",
           "names": {
             "0": "Unknown",
-            "1": "OK",
+            "1": "Good",
             "2": "Low",
             "3": "Critical"
           }
@@ -107,6 +107,17 @@
             "4": "Water Leak (waterleakdetector)",
             "5": "DETECT (EssWFAC)"
           }
+        }
+      ]
+    },
+    {
+      "id": "minuteofday",
+      "ranges": [
+        {
+          "uom": "145",
+          "min": 0,
+          "max": 1439,
+          "step": 1
         }
       ]
     }
@@ -162,14 +173,14 @@
       }
     },
     {
-      "id": "kiddealarm",
-      "name": "Kidde Alarm",
+      "id": "kiddealarm_v2_7",
+      "name": "Kidde Alarm (Smoke+CO+Air Quality)",
       "icon": "GenericCtl",
       "properties": [
         {
           "id": "ST",
           "editor": "bool",
-          "name": "Device Online"
+          "name": "Alarm (Smoke / CO)"
         },
         {
           "id": "GV0",
@@ -188,8 +199,8 @@
         },
         {
           "id": "GV3",
-          "editor": "bool",
-          "name": "Lost"
+          "editor": "minuteofday",
+          "name": "Chips Off Time"
         },
         {
           "id": "SMOKED",
@@ -213,18 +224,13 @@
         },
         {
           "id": "GV6",
-          "editor": "bool",
-          "name": "Water Alarm"
+          "editor": "minuteofday",
+          "name": "Chips On Time"
         },
         {
           "id": "GV7",
           "editor": "bool",
-          "name": "Freeze Alarm"
-        },
-        {
-          "id": "GV8",
-          "editor": "bool",
-          "name": "Contact Lost"
+          "name": "Online"
         },
         {
           "id": "GV9",
@@ -235,11 +241,6 @@
           "id": "GV10",
           "editor": "count",
           "name": "Life Remaining"
-        },
-        {
-          "id": "GV11",
-          "editor": "count",
-          "name": "Battery Level"
         },
         {
           "id": "GV12",

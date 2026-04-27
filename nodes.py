@@ -27,7 +27,8 @@ Custom = udi_interface.Custom
 
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
-    return f"kiddealarm_{bitmask}"
+    # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
+    return f"kiddealarm_v2_{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -291,6 +292,7 @@ class KiddeController(udi_interface.Node):
         self._controller_node_added = False
         self._pending_initial_discovery = False
         self._initial_discovery_in_progress = False
+        self._pending_node_device_updates: dict[str, dict] = {}
 
         self.poly.subscribe(self.poly.START, self.start, self.address)
         self.poly.subscribe(self.poly.STOP, self.stop)
@@ -382,6 +384,15 @@ class KiddeController(udi_interface.Node):
             self._controller_node_added = True
             LOGGER.info("ADDNODEDONE received for controller node")
             self._maybe_run_initial_discovery("ADDNODEDONE")
+            return
+
+        if node_address in self._pending_node_device_updates:
+            pending_device = self._pending_node_device_updates.pop(node_address)
+            for alarm_node in self._alarm_nodes.values():
+                if alarm_node.address == node_address:
+                    LOGGER.debug("Applying deferred device update after ADDNODEDONE for %s", node_address)
+                    alarm_node.update_from_device(pending_device)
+                    break
 
     def _maybe_run_initial_discovery(self, reason: str) -> None:
         if not self._pending_initial_discovery or self._initial_discovery_in_progress:
@@ -477,6 +488,14 @@ class KiddeController(udi_interface.Node):
             expected_device_ids.add(device_id)
 
             expected_nodedef = _alarm_nodedef_id(supports_smoke, supports_co, supports_iaq)
+            label = (
+                device.get("label")
+                or device.get("announcement")
+                or f"Device {device_id}"
+            )
+            valid_name = self.poly.getValidName(str(label))
+            if not valid_name:
+                valid_name = f"Device {device_id}"
             LOGGER.debug(
                 "Discovered Kidde device_id=%s model=%s caps=%s -> smoke=%s co=%s iaq=%s nodedef=%s",
                 device_id,
@@ -502,15 +521,6 @@ class KiddeController(udi_interface.Node):
                 existing = None
 
             if existing is None:
-                label = (
-                    device.get("label")
-                    or device.get("announcement")
-                    or f"Device {device_id}"
-                )
-                valid_name = self.poly.getValidName(str(label))
-                if not valid_name:
-                    valid_name = f"Device {device_id}"
-
                 # Use device id as the source for address generation.
                 # getValidAddress enforces PG3 format/length constraints.
                 address_seed = f"d{device_id}"
@@ -535,7 +545,48 @@ class KiddeController(udi_interface.Node):
                 self.poly.addNode(alarm_node)
                 self._alarm_nodes[device_id] = alarm_node
                 used_addresses.add(valid_address)
-            self._alarm_nodes[device_id].update_from_device(device)
+            elif existing.name != valid_name:
+                LOGGER.info(
+                    "Renaming node for device_id=%s address=%s from '%s' to '%s'",
+                    device_id,
+                    existing.address,
+                    existing.name,
+                    valid_name,
+                )
+                renamed = False
+                try:
+                    rename_fn = getattr(existing, "rename", None)
+                    if callable(rename_fn):
+                        rename_fn(valid_name)
+                        renamed = True
+                except Exception:
+                    LOGGER.debug("Node.rename failed for address=%s", existing.address, exc_info=True)
+                if not renamed:
+                    try:
+                        poly_rename = getattr(self.poly, "renameNode", None)
+                        if callable(poly_rename):
+                            poly_rename(existing.address, valid_name)
+                            renamed = True
+                    except Exception:
+                        LOGGER.debug("poly.renameNode failed for address=%s", existing.address, exc_info=True)
+                if renamed:
+                    existing.name = valid_name
+                else:
+                    LOGGER.warning(
+                        "Unable to rename node for device_id=%s; keeping existing name '%s'",
+                        device_id,
+                        existing.name,
+                    )
+            target_node = self._alarm_nodes[device_id]
+            if getattr(target_node, "added", False):
+                target_node.update_from_device(device)
+            else:
+                LOGGER.debug(
+                    "Deferring update for device_id=%s address=%s until ADDNODEDONE",
+                    device_id,
+                    target_node.address,
+                )
+                self._pending_node_device_updates[target_node.address] = device
 
         for known_device_id in list(self._alarm_nodes.keys()):
             if known_device_id in expected_device_ids:
@@ -543,12 +594,15 @@ class KiddeController(udi_interface.Node):
             stale = self._alarm_nodes[known_device_id]
             LOGGER.info("Removing stale Kidde node device_id=%s address=%s", known_device_id, stale.address)
             self.poly.delNode(stale.address)
+            self._pending_node_device_updates.pop(stale.address, None)
             del self._alarm_nodes[known_device_id]
 
     def discover(self, *_):
+        self._update_dynamic_profile()
         self._refresh_status()
 
     def force_update(self, command=None):
+        self._update_dynamic_profile()
         self._refresh_status()
 
     def _set(self, driver, value, uom=None, force=False):
@@ -638,6 +692,24 @@ def _to_bool(value) -> int:
     return 0
 
 
+def _to_minute_of_day(value, default: int = 0) -> int:
+    value = _value_or_self(value)
+    if value is None or value == "":
+        return default
+
+    if isinstance(value, str):
+        text = value.strip()
+        if ":" in text:
+            try:
+                hh, mm = text.split(":", 1)
+                minutes = int(hh) * 60 + int(mm)
+                return max(0, min(1439, minutes))
+            except Exception:
+                return default
+
+    return max(0, min(1439, _to_int(value, default)))
+
+
 class KiddeAlarmNode(udi_interface.Node):
     """Child node representing a single Kidde smoke/CO detector."""
 
@@ -696,9 +768,12 @@ class KiddeAlarmNode(udi_interface.Node):
             drivers.append({"driver": "GV12", "value": 0, "uom": 25})
         return drivers
 
-    def _set_if_supported(self, driver: str, value) -> None:
+    def _set_if_supported(self, driver: str, value, uom: int | None = None) -> None:
         if driver in self._driver_ids:
-            self.setDriver(driver, value)
+            if uom is None:
+                self.setDriver(driver, value)
+            else:
+                self.setDriver(driver, value, uom=uom)
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
@@ -714,8 +789,24 @@ class KiddeAlarmNode(udi_interface.Node):
             # DETECT series may report CO value under co_ppm.
             co_level = _to_int(device.get("co_ppm", 0), 0)
         life_remaining = _to_int(device.get("life", 0), 0)
-        chips_off   = _to_int(device.get("no_chips_off", 0), 0)
-        chips_on    = _to_int(device.get("no_chips_on",  0), 0)
+        chips_off_raw = next(
+            (
+                device.get(key)
+                for key in ("no_chips_off", "no_chips_off_time", "noChipsOff", "no_chipsOff")
+                if key in device
+            ),
+            0,
+        )
+        chips_on_raw = next(
+            (
+                device.get(key)
+                for key in ("no_chips_on", "no_chips_on_time", "noChipsOn", "no_chipsOn")
+                if key in device
+            ),
+            0,
+        )
+        chips_off   = _to_minute_of_day(chips_off_raw, 0)
+        chips_on    = _to_minute_of_day(chips_on_raw, 0)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
         iaq_status = _IAQ_MAP.get(iaq_raw, 0) if self.supports_iaq else 0
         model_raw = str(device.get("model", "") or "").strip().lower()
@@ -737,12 +828,12 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV0",   smoke)
         self._set_if_supported("GV1",   co)
         self._set_if_supported("GV2",   smoke_hush)
-        self._set_if_supported("GV3",   chips_off)
+        self._set_if_supported("GV3",   chips_off, uom=145)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
-        self._set_if_supported("GV6",   chips_on)
+        self._set_if_supported("GV6",   chips_on, uom=145)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
