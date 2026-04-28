@@ -248,8 +248,7 @@ def _alarm_nodedefs() -> list[dict]:
                                             "id": "CMD",
                                             "name": "Command",
                                             "editor": "kiddecommand",
-                                            "uom": "25",
-                                        }
+                                          }
                                     ],
                                 }
                             ],
