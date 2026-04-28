@@ -835,7 +835,14 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV0",   smoke)
         self._set_if_supported("GV1",   co)
         self._set_if_supported("GV2",   smoke_hush)
+        
         if chips_off is not None:
+            LOGGER.debug(
+                "device_id=%s chips_off raw=%r mapped=%r driver=GV3 uom=145",
+                self.device_id,
+                chips_off_raw,
+                chips_off,
+            )
             self._set_if_supported("GV3", chips_off, uom=145)
         else:
             # Enforce UOM migration even when the API omits chips-off data.
@@ -844,12 +851,24 @@ class KiddeAlarmNode(udi_interface.Node):
                 current_str = current
             else:
                 current_str = _minute_of_day_payload(current) or "00:00"
+            LOGGER.debug(
+                "device_id=%s chips_off raw=%r mapped=%r driver=GV3 uom=145 (fallback)",
+                self.device_id,
+                chips_off_raw,
+                current_str,
+            )
             self._set_if_supported("GV3", current_str, uom=145)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
         if chips_on is not None:
+            LOGGER.debug(
+                "device_id=%s chips_on raw=%r mapped=%r driver=GV6 uom=145",
+                self.device_id,
+                chips_on_raw,
+                chips_on,
+            )
             self._set_if_supported("GV6", chips_on, uom=145)
         else:
             # Enforce UOM migration even when the API omits chips-on data.
@@ -858,6 +877,12 @@ class KiddeAlarmNode(udi_interface.Node):
                 current_str = current
             else:
                 current_str = _minute_of_day_payload(current) or "00:00"
+            LOGGER.debug(
+                "device_id=%s chips_on raw=%r mapped=%r driver=GV6 uom=145 (fallback)",
+                self.device_id,
+                chips_on_raw,
+                current_str,
+            )
             self._set_if_supported("GV6", current_str, uom=145)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
