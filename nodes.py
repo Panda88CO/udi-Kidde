@@ -28,7 +28,7 @@ Custom = udi_interface.Custom
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
     # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
-    return f"kiddealarm_v2_{bitmask}"
+    return f"kiddealarm_v3_{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -157,7 +157,7 @@ def _profile_editors() -> list[dict]:
             "id": "minuteofday",
             "ranges": [
                 {
-                    "uom": "145",
+                    "uom": "44",
                     "min": 0,
                     "max": 1439,
                     "step": 1,
@@ -178,10 +178,10 @@ def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: boo
         st_name = "Alarm"
     props = [
         {"id": "ST",   "editor": "bool",        "name": st_name},
-        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Time"},
+        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Minutes After Midnight"},
         {"id": "GV4",  "editor": "battery",     "name": "Battery State"},
         {"id": "GV5",  "editor": "bool",        "name": "Low Battery Alarm"},
-        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Time"},
+        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Minutes After Midnight"},
         {"id": "GV7",  "editor": "bool",        "name": "Online"},
         {"id": "GV9",  "editor": "modeltype",   "name": "Model"},
         {"id": "GV10", "editor": "count",       "name": "Life Remaining"},
@@ -750,10 +750,10 @@ class KiddeAlarmNode(udi_interface.Node):
     def _build_drivers(self) -> list[dict]:
         drivers = [
             {"driver": "ST",   "value": 0, "uom": 2},    # Alarm active
-            {"driver": "GV3",  "value": 0, "uom": 145},  # Chips Off Time
+            {"driver": "GV3",  "value": 0, "uom": 44},   # Chips Off Minutes After Midnight
             {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
             {"driver": "GV5",  "value": 0, "uom": 2},    # Low Battery Alarm
-            {"driver": "GV6",  "value": 0, "uom": 145},  # Chips On Time
+            {"driver": "GV6",  "value": 0, "uom": 44},   # Chips On Minutes After Midnight
             {"driver": "GV7",  "value": 0, "uom": 2},    # Online
             {"driver": "GV9",  "value": 0, "uom": 25},   # Model
             {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
@@ -839,13 +839,13 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV1",   co)
         self._set_if_supported("GV2",   smoke_hush)
         if chips_off is not None:
-            self._set_if_supported("GV3", chips_off, uom=145, text=chips_off_text)
+            self._set_if_supported("GV3", chips_off, uom=44, text=chips_off_text)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
         if chips_on is not None:
-            self._set_if_supported("GV6", chips_on, uom=145, text=chips_on_text)
+            self._set_if_supported("GV6", chips_on, uom=44, text=chips_on_text)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
