@@ -1,4 +1,5 @@
 # udi-Kidde
+
 PG3x node server for Kidde HomeSafe alarms, using udi_interface and kidde-homesafe.  kidde-homesafe is an open source lib maintained at https://github.com/865charlesw/kidde-homesafe
 
 ## Features
@@ -7,9 +8,11 @@ PG3x node server for Kidde HomeSafe alarms, using udi_interface and kidde-homesa
 - Capability-based alarm nodes (Smoke/CO/Air Quality combinations)
 
 ## Setup
-- Configure EMAIL, PASSWORD, and optional TEMP_UNIT in PG3 custom parameters
+- Configure EMAIL, PASSWORD (from KIdde app), and optional TEMP_UNIT in PG3 custom parameters
 - TEMP_UNIT accepted values: F or C (default: C)
+- Set LongPoll and ShortPoll 
+- ShortPoll sends heartbeat (toggling DON/DOF) (60s default)
+- LongPoll polls data from alarms (300s default)
+- Alarm nodes support Send Command with selector values (UOM 25): 1=Identify, 2=Identify Cancel, 3=Test, 4=Hush
 
-- The node creates a kidde node with all registered alarms as subnodes (I have only tested 1 alarm)
-- Each alarm shows status data and alarm status - need to poll the data (long Poll) - there is no trigger mechanism to trigger alarms when they happen 
-- There is a Send Command function with selector values (UOM 25): 1=Identify, 2=Identify Cancel, 3=Test, 4=Hush
+

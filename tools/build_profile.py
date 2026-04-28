@@ -61,7 +61,15 @@ def build_nodedefs(profile: dict) -> None:
         if accepts:
             accepts_el = ET.SubElement(cmds_el, "accepts")
             for cmd in accepts:
-                ET.SubElement(accepts_el, "cmd", id=cmd["id"])
+                cmd_el = ET.SubElement(accepts_el, "cmd", id=cmd["id"])
+                for param in cmd.get("params", []):
+                    attrs = {
+                        "id": param["id"],
+                        "editor": param["editor"],
+                    }
+                    if "uom" in param:
+                        attrs["uom"] = str(param["uom"])
+                    ET.SubElement(cmd_el, "p", **attrs)
 
     out = DEST / "nodedef" / "nodedefs.xml"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -122,6 +130,11 @@ def build_nls(profile: dict) -> None:
                 value = cmd.get("name", cmd["id"])
                 lines.append(f"{key}={value}")
                 seen_cmd_labels.add(key)
+                for param in cmd.get("params", []):
+                    param_name = param.get("name")
+                    if not param_name:
+                        continue
+                    lines.append(f"CMDP-{nls_id}-{cmd['id']}-{param['id']}-NAME={param_name}")
 
     lines.append("")
     for ed in profile.get("editors", []):

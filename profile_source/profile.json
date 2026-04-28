@@ -111,6 +111,21 @@
       ]
     },
     {
+      "id": "kiddecommand",
+      "ranges": [
+        {
+          "uom": "25",
+          "subset": "1,2,3,4",
+          "names": {
+            "1": "Identify",
+            "2": "Identify Cancel",
+            "3": "Test",
+            "4": "Hush"
+          }
+        }
+      ]
+    },
+    {
       "id": "minuteofday",
       "ranges": [
         {
@@ -173,7 +188,7 @@
       }
     },
     {
-      "id": "kiddealarm_v5_7",
+      "id": "kiddealarm_v6_7",
       "name": "Kidde Alarm (Smoke+CO+Air Quality)",
       "icon": "GenericCtl",
       "properties": [
@@ -266,8 +281,16 @@
         ],
         "accepts": [
           {
-            "id": "HUSH",
-            "name": "Hush Alarm"
+            "id": "SENDCMD",
+            "name": "Send Command",
+            "params": [
+              {
+                "id": "CMD",
+                "name": "Command",
+                "editor": "kiddecommand",
+                "uom": "25"
+              }
+            ]
           }
         ]
       },

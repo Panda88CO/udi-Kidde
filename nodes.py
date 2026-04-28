@@ -28,7 +28,7 @@ Custom = udi_interface.Custom
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
     # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
-    return f"kiddealarm_v5_{bitmask}"
+    return f"kiddealarm_v6_{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -164,6 +164,21 @@ def _profile_editors() -> list[dict]:
                 }
             ],
         },
+        {
+            "id": "kiddecommand",
+            "ranges": [
+                {
+                    "uom": "25",
+                    "subset": "1,2,3,4",
+                    "names": {
+                        "1": "Identify",
+                        "2": "Identify Cancel",
+                        "3": "Test",
+                        "4": "Hush",
+                    },
+                }
+            ],
+        },
     ]
 
 
@@ -224,7 +239,20 @@ def _alarm_nodedefs() -> list[dict]:
                                 {"id": "DON", "name": "Alarm Active"},
                                 {"id": "DOF", "name": "Alarm Cleared"},
                             ],
-                            "accepts": [{"id": "HUSH", "name": "Hush Alarm"}],
+                            "accepts": [
+                                {
+                                    "id": "SENDCMD",
+                                    "name": "Send Command",
+                                    "params": [
+                                        {
+                                            "id": "CMD",
+                                            "name": "Command",
+                                            "editor": "kiddecommand",
+                                            "uom": "25",
+                                        }
+                                    ],
+                                }
+                            ],
                         },
                         "links": {"ctl": [], "rsp": []},
                     }
@@ -639,6 +667,13 @@ _MODEL_TYPE_MAP = {
     "esswfac":           5,
 }
 
+_KIDDE_COMMAND_SELECTORS = {
+    1: "IDENTIFY",
+    2: "IDENTIFYCANCEL",
+    3: "TEST",
+    4: "HUSH",
+}
+
 
 def _device_capabilities(device: dict) -> tuple[bool, bool, bool]:
     caps = set()
@@ -904,25 +939,76 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV12",  iaq_status)
         self._set_if_supported("TIME",  last_seen)
 
-    def hush(self, command=None) -> None:
-        """Send HUSH command to this device via the controller's adapter."""
+    @staticmethod
+    def _extract_selector_value(command) -> int:
+        """Extract command selector integer from a PG3 command payload."""
+        candidates = []
+
+        if isinstance(command, dict):
+            query = command.get("query")
+            if isinstance(query, dict):
+                for key in ("value", "Value", "CMD", "cmd"):
+                    if key in query:
+                        candidates.append(query.get(key))
+                candidates.extend(query.values())
+            for key in ("value", "Value", "CMD", "cmd"):
+                if key in command:
+                    candidates.append(command.get(key))
+            candidates.extend(command.values())
+        elif command is not None:
+            candidates.append(command)
+
+        for raw_value in candidates:
+            try:
+                selector = int(float(raw_value))
+            except (TypeError, ValueError):
+                continue
+            if selector in _KIDDE_COMMAND_SELECTORS:
+                return selector
+
+        # Default remains HUSH for backward compatibility with existing clients.
+        return 4
+
+    def send_command(self, command=None) -> None:
+        """Send a Kidde device command selected from a UOM-25 command parameter."""
         if self.controller is None:
-            LOGGER.error("KiddeAlarmNode.hush: no controller reference")
+            LOGGER.error("KiddeAlarmNode.send_command: no controller reference")
             return
         cfg = self.controller.config
         if not cfg.email or not cfg.password:
-            LOGGER.warning("KiddeAlarmNode.hush: missing credentials")
+            LOGGER.warning("KiddeAlarmNode.send_command: missing credentials")
             return
+
+        selector = self._extract_selector_value(command)
+        enum_name = _KIDDE_COMMAND_SELECTORS.get(selector, "HUSH")
+
         from kidde_homesafe import KiddeCommand
+        kidde_command = getattr(KiddeCommand, enum_name, None)
+        if kidde_command is None:
+            LOGGER.warning(
+                "Unsupported Kidde command enum '%s' for selector=%s; defaulting to HUSH",
+                enum_name,
+                selector,
+            )
+            kidde_command = KiddeCommand.HUSH
+
         ok = self.controller.adapter.device_command(
             cfg.email, cfg.password,
             self.location_id, self.device_id,
-            KiddeCommand.HUSH,
+            kidde_command,
         )
-        LOGGER.info("HUSH %s/%s -> %s", self.location_id, self.device_id, ok)
+        LOGGER.info(
+            "SENDCMD selector=%s enum=%s %s/%s -> %s",
+            selector,
+            enum_name,
+            self.location_id,
+            self.device_id,
+            ok,
+        )
         if ok:
             self.controller._refresh_status()
 
     commands = {
-        "HUSH": hush,
+        "SENDCMD": send_command,
+        "HUSH": send_command,
     }
