@@ -28,7 +28,7 @@ Custom = udi_interface.Custom
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
     # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
-    return f"kiddealarm_v4_{bitmask}"
+    return f"kiddealarm_v5_{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -157,7 +157,10 @@ def _profile_editors() -> list[dict]:
             "id": "minuteofday",
             "ranges": [
                 {
-                    "uom": "145",
+                    "uom": "44",
+                    "min": 0,
+                    "max": 1439,
+                    "step": 1,
                 }
             ],
         },
@@ -175,10 +178,10 @@ def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: boo
         st_name = "Alarm"
     props = [
         {"id": "ST",   "editor": "bool",        "name": st_name},
-        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Time"},
+        {"id": "GV3",  "editor": "minuteofday", "name": "Chirps Off Time after Midnight"},
         {"id": "GV4",  "editor": "battery",     "name": "Battery State"},
         {"id": "GV5",  "editor": "bool",        "name": "Low Battery Alarm"},
-        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Time"},
+        {"id": "GV6",  "editor": "minuteofday", "name": "Chirps On Time (after Midnight)"},
         {"id": "GV7",  "editor": "bool",        "name": "Online"},
         {"id": "GV9",  "editor": "modeltype",   "name": "Model"},
         {"id": "GV10", "editor": "count",       "name": "Life Remaining"},
@@ -707,14 +710,13 @@ def _to_minute_of_day(value, default: int = 0) -> int:
     return max(0, min(1439, _to_int(value, default)))
 
 
-def _minute_of_day_payload(raw_value) -> str | None:
-    """Return HH:MM, or None when the source is missing/invalid."""
+def _minute_of_day_payload(raw_value) -> int | None:
+    """Return minutes after midnight, or None when the source is missing/invalid."""
     value = _value_or_self(raw_value)
     if value is None or value == "" or isinstance(value, bool):
         return None
 
-    minutes = _to_minute_of_day(value, 0)
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+    return _to_minute_of_day(value, 0)
 
 
 class KiddeAlarmNode(udi_interface.Node):
@@ -747,10 +749,10 @@ class KiddeAlarmNode(udi_interface.Node):
     def _build_drivers(self) -> list[dict]:
         drivers = [
             {"driver": "ST",   "value": 0, "uom": 2},    # Alarm active
-            {"driver": "GV3",  "value": "00:00", "uom": 145},  # Chips Off Time
+            {"driver": "GV3",  "value": 0, "uom": 44},   # Chirps Off Time after Midnight
             {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
             {"driver": "GV5",  "value": 0, "uom": 2},    # Low Battery Alarm
-            {"driver": "GV6",  "value": "00:00", "uom": 145},  # Chips On Time
+            {"driver": "GV6",  "value": 0, "uom": 44},   # Chirps On Time after Midnight
             {"driver": "GV7",  "value": 0, "uom": 2},    # Online
             {"driver": "GV9",  "value": 0, "uom": 25},   # Model
             {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
@@ -799,7 +801,16 @@ class KiddeAlarmNode(udi_interface.Node):
         chips_off_raw = next(
             (
                 device.get(key)
-                for key in ("no_chips_off", "no_chips_off_time", "noChipsOff", "no_chipsOff")
+                for key in (
+                    "no_chips_off",
+                    "no_chips_off_time",
+                    "noChipsOff",
+                    "no_chipsOff",
+                    "no_chirp_off",
+                    "no_chirp_off_time",
+                    "noChirpOff",
+                    "no_chirpOff",
+                )
                 if key in device and device.get(key) not in (None, "")
             ),
             None,
@@ -807,7 +818,16 @@ class KiddeAlarmNode(udi_interface.Node):
         chips_on_raw = next(
             (
                 device.get(key)
-                for key in ("no_chips_on", "no_chips_on_time", "noChipsOn", "no_chipsOn")
+                for key in (
+                    "no_chips_on",
+                    "no_chips_on_time",
+                    "noChipsOn",
+                    "no_chipsOn",
+                    "no_chirp_on",
+                    "no_chirp_on_time",
+                    "noChirpOn",
+                    "no_chirpOn",
+                )
                 if key in device and device.get(key) not in (None, "")
             ),
             None,
@@ -838,52 +858,46 @@ class KiddeAlarmNode(udi_interface.Node):
         
         if chips_off is not None:
             LOGGER.debug(
-                "device_id=%s chips_off raw=%r mapped=%r driver=GV3 uom=145",
+                "device_id=%s chirps_off raw=%r mapped=%r driver=GV3 uom=44",
                 self.device_id,
                 chips_off_raw,
                 chips_off,
             )
-            self._set_if_supported("GV3", chips_off, uom=145)
+            self._set_if_supported("GV3", chips_off, uom=44)
         else:
             # Enforce UOM migration even when the API omits chips-off data.
             current = self.getDriver("GV3")
-            if isinstance(current, str) and ":" in current:
-                current_str = current
-            else:
-                current_str = _minute_of_day_payload(current) or "00:00"
+            current_minutes = _to_minute_of_day(current, 0)
             LOGGER.debug(
-                "device_id=%s chips_off raw=%r mapped=%r driver=GV3 uom=145 (fallback)",
+                "device_id=%s chirps_off raw=%r mapped=%r driver=GV3 uom=44 (fallback)",
                 self.device_id,
                 chips_off_raw,
-                current_str,
+                current_minutes,
             )
-            self._set_if_supported("GV3", current_str, uom=145)
+            self._set_if_supported("GV3", current_minutes, uom=44)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
         if chips_on is not None:
             LOGGER.debug(
-                "device_id=%s chips_on raw=%r mapped=%r driver=GV6 uom=145",
+                "device_id=%s chirps_on raw=%r mapped=%r driver=GV6 uom=44",
                 self.device_id,
                 chips_on_raw,
                 chips_on,
             )
-            self._set_if_supported("GV6", chips_on, uom=145)
+            self._set_if_supported("GV6", chips_on, uom=44)
         else:
             # Enforce UOM migration even when the API omits chips-on data.
             current = self.getDriver("GV6")
-            if isinstance(current, str) and ":" in current:
-                current_str = current
-            else:
-                current_str = _minute_of_day_payload(current) or "00:00"
+            current_minutes = _to_minute_of_day(current, 0)
             LOGGER.debug(
-                "device_id=%s chips_on raw=%r mapped=%r driver=GV6 uom=145 (fallback)",
+                "device_id=%s chirps_on raw=%r mapped=%r driver=GV6 uom=44 (fallback)",
                 self.device_id,
                 chips_on_raw,
-                current_str,
+                current_minutes,
             )
-            self._set_if_supported("GV6", current_str, uom=145)
+            self._set_if_supported("GV6", current_minutes, uom=44)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
