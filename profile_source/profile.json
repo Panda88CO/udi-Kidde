@@ -114,10 +114,7 @@
       "id": "minuteofday",
       "ranges": [
         {
-          "uom": "44",
-          "min": 0,
-          "max": 1439,
-          "step": 1
+          "uom": "145"
         }
       ]
     }
@@ -173,7 +170,7 @@
       }
     },
     {
-      "id": "kiddealarm_v3_7",
+      "id": "kiddealarm_v4_7",
       "name": "Kidde Alarm (Smoke+CO+Air Quality)",
       "icon": "GenericCtl",
       "properties": [
@@ -200,7 +197,7 @@
         {
           "id": "GV3",
           "editor": "minuteofday",
-          "name": "Chips Off Minutes After Midnight"
+          "name": "Chips Off Time"
         },
         {
           "id": "SMOKED",
@@ -225,7 +222,7 @@
         {
           "id": "GV6",
           "editor": "minuteofday",
-          "name": "Chips On Minutes After Midnight"
+          "name": "Chips On Time"
         },
         {
           "id": "GV7",

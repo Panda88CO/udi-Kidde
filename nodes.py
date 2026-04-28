@@ -28,7 +28,7 @@ Custom = udi_interface.Custom
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
     # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
-    return f"kiddealarm_v3_{bitmask}"
+    return f"kiddealarm_v4_{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -157,10 +157,7 @@ def _profile_editors() -> list[dict]:
             "id": "minuteofday",
             "ranges": [
                 {
-                    "uom": "44",
-                    "min": 0,
-                    "max": 1439,
-                    "step": 1,
+                    "uom": "145",
                 }
             ],
         },
@@ -178,10 +175,10 @@ def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: boo
         st_name = "Alarm"
     props = [
         {"id": "ST",   "editor": "bool",        "name": st_name},
-        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Minutes After Midnight"},
+        {"id": "GV3",  "editor": "minuteofday", "name": "Chips Off Time"},
         {"id": "GV4",  "editor": "battery",     "name": "Battery State"},
         {"id": "GV5",  "editor": "bool",        "name": "Low Battery Alarm"},
-        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Minutes After Midnight"},
+        {"id": "GV6",  "editor": "minuteofday", "name": "Chips On Time"},
         {"id": "GV7",  "editor": "bool",        "name": "Online"},
         {"id": "GV9",  "editor": "modeltype",   "name": "Model"},
         {"id": "GV10", "editor": "count",       "name": "Life Remaining"},
@@ -710,14 +707,14 @@ def _to_minute_of_day(value, default: int = 0) -> int:
     return max(0, min(1439, _to_int(value, default)))
 
 
-def _minute_of_day_payload(raw_value) -> tuple[int | None, str | None]:
-    """Return (minutes, HH:MM text) or (None, None) when the source is missing/invalid."""
+def _minute_of_day_payload(raw_value) -> str | None:
+    """Return HH:MM, or None when the source is missing/invalid."""
     value = _value_or_self(raw_value)
     if value is None or value == "" or isinstance(value, bool):
-        return None, None
+        return None
 
     minutes = _to_minute_of_day(value, 0)
-    return minutes, f"{minutes // 60:02d}:{minutes % 60:02d}"
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
 class KiddeAlarmNode(udi_interface.Node):
@@ -750,10 +747,10 @@ class KiddeAlarmNode(udi_interface.Node):
     def _build_drivers(self) -> list[dict]:
         drivers = [
             {"driver": "ST",   "value": 0, "uom": 2},    # Alarm active
-            {"driver": "GV3",  "value": 0, "uom": 44},   # Chips Off Minutes After Midnight
+            {"driver": "GV3",  "value": "00:00", "uom": 145},  # Chips Off Time
             {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
             {"driver": "GV5",  "value": 0, "uom": 2},    # Low Battery Alarm
-            {"driver": "GV6",  "value": 0, "uom": 44},   # Chips On Minutes After Midnight
+            {"driver": "GV6",  "value": "00:00", "uom": 145},  # Chips On Time
             {"driver": "GV7",  "value": 0, "uom": 2},    # Online
             {"driver": "GV9",  "value": 0, "uom": 25},   # Model
             {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
@@ -778,12 +775,12 @@ class KiddeAlarmNode(udi_interface.Node):
             drivers.append({"driver": "GV12", "value": 0, "uom": 25})
         return drivers
 
-    def _set_if_supported(self, driver: str, value, uom: int | None = None, text: str | None = None) -> None:
+    def _set_if_supported(self, driver: str, value, uom: int | None = None) -> None:
         if driver in self._driver_ids:
             if uom is None:
-                self.setDriver(driver, value, text=text)
+                self.setDriver(driver, value)
             else:
-                self.setDriver(driver, value, uom=uom, text=text)
+                self.setDriver(driver, value, uom=uom)
 
     def update_from_device(self, device: dict) -> None:
         """Update drivers from a device dict returned by KiddeDataset.devices."""
@@ -815,8 +812,8 @@ class KiddeAlarmNode(udi_interface.Node):
             ),
             None,
         )
-        chips_off, chips_off_text = _minute_of_day_payload(chips_off_raw)
-        chips_on, chips_on_text = _minute_of_day_payload(chips_on_raw)
+        chips_off = _minute_of_day_payload(chips_off_raw)
+        chips_on = _minute_of_day_payload(chips_on_raw)
         iaq_raw = str(_value_or_self(device.get("overall_iaq_status", "")) or "").strip().lower()
         iaq_status = _IAQ_MAP.get(iaq_raw, 0) if self.supports_iaq else 0
         model_raw = str(device.get("model", "") or "").strip().lower()
@@ -839,13 +836,29 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV1",   co)
         self._set_if_supported("GV2",   smoke_hush)
         if chips_off is not None:
-            self._set_if_supported("GV3", chips_off, uom=44, text=chips_off_text)
+            self._set_if_supported("GV3", chips_off, uom=145)
+        else:
+            # Enforce UOM migration even when the API omits chips-off data.
+            current = self.getDriver("GV3")
+            if isinstance(current, str) and ":" in current:
+                current_str = current
+            else:
+                current_str = _minute_of_day_payload(current) or "00:00"
+            self._set_if_supported("GV3", current_str, uom=145)
         self._set_if_supported("SMOKED", smoke_level)
         self._set_if_supported("CO",    co_level)
         self._set_if_supported("GV4",   battery_int)
         self._set_if_supported("GV5",   low_batt)
         if chips_on is not None:
-            self._set_if_supported("GV6", chips_on, uom=44, text=chips_on_text)
+            self._set_if_supported("GV6", chips_on, uom=145)
+        else:
+            # Enforce UOM migration even when the API omits chips-on data.
+            current = self.getDriver("GV6")
+            if isinstance(current, str) and ":" in current:
+                current_str = current
+            else:
+                current_str = _minute_of_day_payload(current) or "00:00"
+            self._set_if_supported("GV6", current_str, uom=145)
         self._set_if_supported("GV7",   online)
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
