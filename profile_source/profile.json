@@ -283,7 +283,7 @@
           {
             "id": "SENDCMD",
             "name": "Send Command",
-            "params": [
+            "parameter": [
               {
                 "id": "CMD",
                 "name": "Command",
