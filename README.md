@@ -5,6 +5,7 @@ PG3x node server for Kidde HomeSafe alarms, using udi_interface and kidde-homesa
 - Controller node with online status, last update time, and alarm count
 - Heartbeat (DON/DOF) toggle on shortPoll
 - Capability-based alarm nodes (Smoke/CO/Air Quality combinations)
+- Dynamic PG3 profile generated at runtime from `nodes.py` (single source of truth)
 
 ## Setup
 - Configure EMAIL, PASSWORD, and optional TEMP_UNIT in PG3 custom parameters
