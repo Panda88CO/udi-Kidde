@@ -8,7 +8,7 @@ if __name__ == "__main__":
     LOGGER = udi_interface.LOGGER
     try:
         polyglot = udi_interface.Interface([])
-        polyglot.start({"version": "0.1.3", "requestId": True})
+        polyglot.start({"version": "0.1.4", "requestId": True})
         polyglot.setCustomParamsDoc()
         KiddeController(polyglot, "setup", "setup", "Kidde Monitors")
         polyglot.runForever()
