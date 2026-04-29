@@ -243,7 +243,7 @@ def _alarm_nodedefs() -> list[dict]:
                                 {
                                     "id": "SENDCMD",
                                     "name": "Send Command",
-                                    "parameter": [
+                                    "parameters": [
                                         {
                                             "id": "CMD",
                                             "name": "Command",
