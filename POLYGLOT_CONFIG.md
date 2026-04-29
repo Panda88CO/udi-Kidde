@@ -12,7 +12,7 @@ PG3x node server for Kidde HomeSafe alarms, using udi_interface and kidde-homesa
 - TEMP_UNIT accepted values: F or C (default: C)
 - Set LongPoll and ShortPoll 
 - ShortPoll sends heartbeat (toggling DON/DOF) (60s default)
-- LongPoll polls data from alarms (300s default)
-- Alarm nodes support Send Command with selector values (UOM 25): 1=Identify, 2=Identify Cancel, 3=Test, 4=Hush
+- LongPoll polls data from alarms (300s default) - Note, it is not a refresh - it just polls latest data from the clould, so it does not make sense to Poll too often
+- Alarm nodes support Send Command  Identify, Identify Cancel, Test, 4=Hush
 
 
