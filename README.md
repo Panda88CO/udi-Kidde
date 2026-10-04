@@ -26,13 +26,3 @@ PG3x node server for Kidde HomeSafe alarms, using `udi_interface` and `kidde-hom
    - `shortPoll` (default: 30s): sends heartbeat toggling `DON`/`DOF`.
    - `longPoll` (default: 180s): polls latest telemetry data from the Kidde cloud.
      > **Note:** Kidde alarms do not push real-time events to the cloud; `longPoll` polls the latest reported state. Updating data fetches the last reported cloud status, so polling excessively fast provides no benefit.
-
-## Testing & Quality Assurance
-The repository includes a standalone test suite verifying packaging manifests, schema naming, UOM mappings, driver integrity, and controller lifecycle:
-```bash
-python3 run_tests.py -v
-```
-Or via standard unittest discovery:
-```bash
-python3 -m unittest discover tests
-```

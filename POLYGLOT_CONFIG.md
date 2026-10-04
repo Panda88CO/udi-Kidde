@@ -17,3 +17,4 @@ PG3x node server for Kidde HomeSafe alarms, using `udi_interface` and `kidde-hom
   - `longPoll` polls data from Kidde cloud (default: 180s)
     - *Note:* LongPoll fetches the latest data reported to the Kidde cloud; alarms do not push real-time events to the cloud, so polling too frequently is not beneficial.
 - Alarm nodes support `Send Command`: Identify, Identify Cancel, Test, and Hush
+
