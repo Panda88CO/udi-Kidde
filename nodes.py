@@ -1,5 +1,7 @@
 # Node classes for Kidde PG3x node server
 
+from __future__ import annotations
+
 import re
 import time
 import udi_interface
@@ -28,7 +30,7 @@ Custom = udi_interface.Custom
 def _alarm_nodedef_id(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
     bitmask = (4 if supports_smoke else 0) | (2 if supports_co else 0) | (1 if supports_iaq else 0)
     # Bump schema version when driver semantics/UOMs change so existing nodes are rebuilt.
-    return f"kiddealarm_v6_{bitmask}"
+    return f"KIDDEALARM{bitmask}"
 
 
 def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: bool) -> str:
@@ -47,19 +49,17 @@ def _alarm_nodedef_name(supports_smoke: bool, supports_co: bool, supports_iaq: b
 def _profile_editors() -> list[dict]:
     return [
         {
-            "id": "bool",
+            "id": "BOOLEAN",
             "ranges": [
                 {
-                    "uom": "2",
-                    "min": 0,
-                    "max": 1,
-                    "step": 1,
+                    "uom": "25",
+                    "subset": "0,1",
                     "names": {"0": "No", "1": "Yes"},
                 }
             ],
         },
         {
-            "id": "connect",
+            "id": "CONNECT",
             "ranges": [
                 {
                     "uom": "25",
@@ -73,7 +73,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "count",
+            "id": "COUNT",
             "ranges": [
                 {
                     "uom": "56",
@@ -84,7 +84,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "ppm",
+            "id": "PPM",
             "ranges": [
                 {
                     "uom": "54",
@@ -95,7 +95,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "unixtime",
+            "id": "UNIXTIME",
             "ranges": [
                 {
                     "uom": "151",
@@ -106,7 +106,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "battery",
+            "id": "BATTERY",
             "ranges": [
                 {
                     "uom": "25",
@@ -121,7 +121,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "iaq",
+            "id": "IAQ",
             "ranges": [
                 {
                     "uom": "25",
@@ -137,7 +137,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "modeltype",
+            "id": "MODELTYPE",
             "ranges": [
                 {
                     "uom": "25",
@@ -154,7 +154,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "minuteofday",
+            "id": "MINUTEOFDAY",
             "ranges": [
                 {
                     "uom": "44",
@@ -165,7 +165,7 @@ def _profile_editors() -> list[dict]:
             ],
         },
         {
-            "id": "kiddecommand",
+            "id": "KIDDECOMMAND",
             "ranges": [
                 {
                     "uom": "25",
@@ -192,33 +192,33 @@ def _alarm_properties(supports_smoke: bool, supports_co: bool, supports_iaq: boo
     else:
         st_name = "Alarm"
     props = [
-        {"id": "ST",   "editor": "bool",        "name": st_name},
-        {"id": "GV3",  "editor": "minuteofday", "name": "Chirps Off Time after Midnight"},
-        {"id": "GV4",  "editor": "battery",     "name": "Battery State"},
-        {"id": "GV5",  "editor": "bool",        "name": "Low Battery Alarm"},
-        {"id": "GV6",  "editor": "minuteofday", "name": "Chirps On Time (after Midnight)"},
-        {"id": "GV7",  "editor": "bool",        "name": "Online"},
-        {"id": "GV9",  "editor": "modeltype",   "name": "Model"},
-        {"id": "GV10", "editor": "count",       "name": "Life Remaining"},
-        {"id": "TIME", "editor": "unixtime",    "name": "Last Seen"},
+        {"id": "ST",   "editor": "BOOLEAN",     "name": st_name},
+        {"id": "GV3",  "editor": "MINUTEOFDAY", "name": "Chirps Off Time after Midnight"},
+        {"id": "GV4",  "editor": "BATTERY",     "name": "Battery State"},
+        {"id": "GV5",  "editor": "BOOLEAN",     "name": "Low Battery Alarm"},
+        {"id": "GV6",  "editor": "MINUTEOFDAY", "name": "Chirps On Time (after Midnight)"},
+        {"id": "GV7",  "editor": "BOOLEAN",     "name": "Online"},
+        {"id": "GV9",  "editor": "MODELTYPE",   "name": "Model"},
+        {"id": "GV10", "editor": "COUNT",       "name": "Life Remaining"},
+        {"id": "TIME", "editor": "UNIXTIME",    "name": "Last Seen"},
     ]
     if supports_smoke:
         props.extend(
             [
-                {"id": "GV0", "editor": "bool", "name": "Smoke Alarm"},
-                {"id": "GV2", "editor": "bool", "name": "Smoke Hushed"},
-                {"id": "SMOKED", "editor": "count", "name": "Smoke Level"},
+                {"id": "GV0", "editor": "BOOLEAN", "name": "Smoke Alarm"},
+                {"id": "GV2", "editor": "BOOLEAN", "name": "Smoke Hushed"},
+                {"id": "SMOKED", "editor": "COUNT", "name": "Smoke Level"},
             ]
         )
     if supports_co:
         props.extend(
             [
-                {"id": "GV1", "editor": "bool", "name": "CO Alarm"},
-                {"id": "CO", "editor": "ppm", "name": "CO Level"},
+                {"id": "GV1", "editor": "BOOLEAN", "name": "CO Alarm"},
+                {"id": "CO", "editor": "PPM", "name": "CO Level"},
             ]
         )
     if supports_iaq:
-        props.append({"id": "GV12", "editor": "iaq", "name": "Overall IAQ Status"})
+        props.append({"id": "GV12", "editor": "IAQ", "name": "Overall IAQ Status"})
     props.sort(key=lambda item: item["id"])
     return props
 
@@ -236,8 +236,8 @@ def _alarm_nodedefs() -> list[dict]:
                         "properties": _alarm_properties(smoke, co, iaq),
                         "cmds": {
                             "sends": [
-                                {"id": "DON", "name": "Alarm Active"},
-                                {"id": "DOF", "name": "Alarm Cleared"},
+                                {"id": "DON"},
+                                {"id": "DOF"},
                             ],
                             "accepts": [
                                 {
@@ -247,7 +247,7 @@ def _alarm_nodedefs() -> list[dict]:
                                         {
                                             "id": "CMD",
                                             "name": "Command",
-                                            "editor": "kiddecommand",
+                                            "editor": "KIDDECOMMAND",
                                           }
                                     ],
                                 }
@@ -269,19 +269,19 @@ def _dynamic_profile_payload() -> dict:
         "editors": _profile_editors(),
         "nodedefs": [
             {
-                "id": "setup",
+                "id": "SETUP",
                 "name": "Kidde Monitors",
                 "icon": "GenericCtl",
                 "properties": [
-                    {"id": "ST", "editor": "connect", "name": "Node Server Status"},
-                    {"id": "GV0", "editor": "count", "name": "Number of Alarms"},
-                    {"id": "GV1", "editor": "bool", "name": "Online Status"},
-                    {"id": "TIME", "editor": "unixtime", "name": "Last Update Time"},
+                    {"id": "ST", "editor": "CONNECT", "name": "Node Server Status"},
+                    {"id": "GV0", "editor": "COUNT", "name": "Number of Alarms"},
+                    {"id": "GV1", "editor": "BOOLEAN", "name": "Online Status"},
+                    {"id": "TIME", "editor": "UNIXTIME", "name": "Last Update Time"},
                 ],
                 "cmds": {
                     "sends": [
-                        {"id": "DON", "name": "Heartbeat On"},
-                        {"id": "DOF", "name": "Heartbeat Off"},
+                        {"id": "DON"},
+                        {"id": "DOF"},
                     ],
                     "accepts": [{"id": "UPDATE", "name": "Force Data Update"}],
                 },
@@ -293,12 +293,12 @@ def _dynamic_profile_payload() -> dict:
     }
 
 class KiddeController(udi_interface.Node):
-    id = "setup"
+    id = "SETUP"
     drivers = [
         {"driver": "ST", "value": 0, "uom": 25},
         {"driver": "GV0", "value": 0, "uom": 56},  # Number of alarms
         {"driver": "GV1", "value": 0, "uom": 25},  # Online status
-        {"driver": "TIME", "value": int(time.time()), "uom": 151},
+        {"driver": "TIME", "value": 0, "uom": 151},
     ]
 
     def __init__(self, polyglot, primary, address, name):
@@ -311,7 +311,7 @@ class KiddeController(udi_interface.Node):
         self.adapter = KiddeAsyncAdapter()
         self.num_alarms = 0
         self.online = 0
-        self.last_update = int(time.time())
+        self.last_update = 0
         self._alarm_nodes: dict[int, "KiddeAlarmNode"] = {}
         self._started = False
         self._has_valid_params = False
@@ -351,7 +351,6 @@ class KiddeController(udi_interface.Node):
 
     def start(self):
         self._started = True
-        self._set("TIME", int(time.time()), 151)
         self._pending_initial_discovery = True
         LOGGER.info("Controller start: waiting for CONFIGDONE and ADDNODEDONE before initial Kidde discovery")
         self._maybe_run_initial_discovery("START")
@@ -462,7 +461,6 @@ class KiddeController(udi_interface.Node):
             self._initial_discovery_in_progress = False
 
     def poll(self, poll_type):
-        self._set("TIME", int(time.time()), 151)
         if poll_type == "shortPoll":
             self.heartbeat_state = 1 - self.heartbeat_state
             if self.heartbeat_state:
@@ -493,6 +491,7 @@ class KiddeController(udi_interface.Node):
             self.num_alarms = result.get("num_alarms", 0)
             self.last_update = int(time.time())
             self._set("ST", 1)
+            self._set("TIME", self.last_update, 151)
             self.poly.Notices.delete("refresh")
             self._reconcile_nodes(result.get("devices", {}))
         else:
@@ -501,7 +500,6 @@ class KiddeController(udi_interface.Node):
             self.poly.Notices["refresh"] = "Kidde refresh failed. Check credentials/connectivity."
         self._set("GV1", self.online)
         self._set("GV0", self.num_alarms)
-        self._set("TIME", self.last_update, 151)
 
     def _reconcile_nodes(self, devices: dict) -> None:
         """Create child nodes for newly-discovered devices and update existing ones."""
@@ -782,12 +780,12 @@ class KiddeAlarmNode(udi_interface.Node):
 
     def _build_drivers(self) -> list[dict]:
         drivers = [
-            {"driver": "ST",   "value": 0, "uom": 2},    # Alarm active
+            {"driver": "ST",   "value": 0, "uom": 25},   # Alarm active
             {"driver": "GV3",  "value": 0, "uom": 44},   # Chirps Off Time after Midnight
             {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
-            {"driver": "GV5",  "value": 0, "uom": 2},    # Low Battery Alarm
+            {"driver": "GV5",  "value": 0, "uom": 25},   # Low Battery Alarm
             {"driver": "GV6",  "value": 0, "uom": 44},   # Chirps On Time after Midnight
-            {"driver": "GV7",  "value": 0, "uom": 2},    # Online
+            {"driver": "GV7",  "value": 0, "uom": 25},   # Online
             {"driver": "GV9",  "value": 0, "uom": 25},   # Model
             {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
             {"driver": "TIME", "value": 0, "uom": 151},  # Last Seen
@@ -795,15 +793,15 @@ class KiddeAlarmNode(udi_interface.Node):
         if self.supports_smoke:
             drivers.extend(
                 [
-                    {"driver": "GV0", "value": 0, "uom": 2},
-                    {"driver": "GV2", "value": 0, "uom": 2},
+                    {"driver": "GV0", "value": 0, "uom": 25},
+                    {"driver": "GV2", "value": 0, "uom": 25},
                     {"driver": "SMOKED", "value": 0, "uom": 56},
                 ]
             )
         if self.supports_co:
             drivers.extend(
                 [
-                    {"driver": "GV1", "value": 0, "uom": 2},
+                    {"driver": "GV1", "value": 0, "uom": 25},
                     {"driver": "CO", "value": 0, "uom": 54},
                 ]
             )
@@ -936,7 +934,8 @@ class KiddeAlarmNode(udi_interface.Node):
         self._set_if_supported("GV9",   model_type)
         self._set_if_supported("GV10",  life_remaining)
         self._set_if_supported("GV12",  iaq_status)
-        self._set_if_supported("TIME",  last_seen)
+        if last_seen > 0:
+            self._set_if_supported("TIME",  last_seen)
 
     @staticmethod
     def _extract_selector_value(command) -> int:
