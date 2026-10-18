@@ -156,6 +156,46 @@ class TestKiddeController(unittest.TestCase):
         self.assertIn(101, self.controller._alarm_nodes)
         self.assertNotIn(102, self.controller._alarm_nodes)
 
+    def test_dynamic_profile_not_loaded_on_init(self) -> None:
+        """Dynamic profile must NOT be loaded on __init__ before the node is done initializing."""
+        fresh_poly = MockPolyglot()
+        fresh_ctrl = nodes.KiddeController(fresh_poly, "setup", "setup", "Kidde Monitors")
+        self.assertFalse(fresh_ctrl._profile_loaded, "Profile must not be loaded during __init__")
+        self.assertIsNone(fresh_poly.profile_payload, "polyglot.updateJsonProfile must not be called in __init__")
+
+    def test_dynamic_profile_loaded_on_start(self) -> None:
+        """Dynamic profile is loaded when start() runs once the node is initialized."""
+        fresh_poly = MockPolyglot()
+        fresh_ctrl = nodes.KiddeController(fresh_poly, "setup", "setup", "Kidde Monitors")
+        self.assertIsNone(fresh_poly.profile_payload)
+
+        fresh_ctrl.start()
+        self.assertTrue(fresh_ctrl._profile_loaded)
+        self.assertIsNotNone(fresh_poly.profile_payload)
+        self.assertEqual(fresh_poly.profile_payload["nodedefs"][0]["id"], "SETUP")
+
+    def test_dynamic_profile_loaded_on_controller_addnodedone(self) -> None:
+        """Dynamic profile is loaded when ADDNODEDONE for the controller arrives."""
+        fresh_poly = MockPolyglot()
+        fresh_ctrl = nodes.KiddeController(fresh_poly, "setup", "setup", "Kidde Monitors")
+        self.assertIsNone(fresh_poly.profile_payload)
+
+        fresh_ctrl.handle_addnode_done({"address": fresh_ctrl.address})
+        self.assertTrue(fresh_ctrl._profile_loaded)
+        self.assertIsNotNone(fresh_poly.profile_payload)
+
+    def test_dynamic_profile_reloaded_on_discover_and_force_update(self) -> None:
+        """Explicit discover or force_update calls re-sync the dynamic profile."""
+        self.controller.adapter.refresh = lambda *a, **k: {"num_alarms": 0, "devices": {}}
+        self.poly.profile_payload = None
+
+        self.controller.discover()
+        self.assertIsNotNone(self.poly.profile_payload)
+
+        self.poly.profile_payload = None
+        self.controller.force_update()
+        self.assertIsNotNone(self.poly.profile_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

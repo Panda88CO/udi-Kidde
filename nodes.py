@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 import udi_interface
 from datetime import datetime, timezone
 from config_parser import KiddeConfig, build_config
@@ -292,13 +293,83 @@ def _dynamic_profile_payload() -> dict:
         "linkdefs": [],
     }
 
+
+def _editor_uoms() -> dict[str, int]:
+    """Map editor IDs to their primary UOM integer from _profile_editors()."""
+    uoms: dict[str, int] = {}
+    for ed in _profile_editors():
+        eid = ed.get("id")
+        ranges = ed.get("ranges", [])
+        if ranges and "uom" in ranges[0]:
+            try:
+                uoms[eid] = int(ranges[0]["uom"])
+            except (ValueError, TypeError):
+                pass
+    return uoms
+
+
+def _load_driver_names_from_profile_dir(profile_dir: Path, nodedef_id: str) -> dict[str, str]:
+    """Parse driver names from a static profile directory (NLS files) if present."""
+    names: dict[str, str] = {}
+    nls_dir = profile_dir / "nls"
+    if nls_dir.is_dir():
+        for nls_file in nls_dir.glob("*.txt"):
+            try:
+                for line in nls_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, val = [part.strip() for part in line.split("=", 1)]
+                        parts = key.split("-")
+                        if len(parts) >= 4 and parts[0] == "ND" and parts[1] == nodedef_id and parts[-1] == "NAME":
+                            driver_id = parts[2]
+                            names[driver_id] = val
+                        elif len(parts) == 3 and parts[0] == "ST" and parts[-1] == "NAME":
+                            driver_id = parts[1]
+                            names.setdefault(driver_id, val)
+            except Exception as err:
+                LOGGER.debug("Failed to read NLS file %s: %s", nls_file, err)
+    return names
+
+
+def _load_driver_names_from_dynamic_profile(nodedef_id: str) -> dict[str, str]:
+    """Extract driver human-readable names from the dynamic profile generated in code."""
+    payload = _dynamic_profile_payload()
+    for nd in payload.get("nodedefs", []):
+        if nd.get("id") == nodedef_id:
+            return {
+                prop["id"]: prop.get("name", prop["id"])
+                for prop in nd.get("properties", [])
+                if "id" in prop
+            }
+    return {}
+
+
+def get_driver_names_from_profile(nodedef_id: str) -> dict[str, str]:
+    """
+    Retrieve driver names from the dynamic profile generated in code,
+    or from the profile directory if static profile definitions are available.
+    """
+    profile_dir = Path(__file__).resolve().parent / "profile"
+    if profile_dir.is_dir():
+        names = _load_driver_names_from_profile_dir(profile_dir, nodedef_id)
+        if names:
+            return names
+
+    return _load_driver_names_from_dynamic_profile(nodedef_id)
+
+
+_CONTROLLER_DRIVER_NAMES = get_driver_names_from_profile("SETUP")
+
+
 class KiddeController(udi_interface.Node):
     id = "SETUP"
     drivers = [
-        {"driver": "ST", "value": 0, "uom": 25},
-        {"driver": "GV0", "value": 0, "uom": 56},  # Number of alarms
-        {"driver": "GV1", "value": 0, "uom": 25},  # Online status
-        {"driver": "TIME", "value": 0, "uom": 151},
+        {"driver": "ST",   "value": 0, "uom": 25,  "name": _CONTROLLER_DRIVER_NAMES.get("ST", "Node Server Status")},
+        {"driver": "GV0",  "value": 0, "uom": 56,  "name": _CONTROLLER_DRIVER_NAMES.get("GV0", "Number of Alarms")},
+        {"driver": "GV1",  "value": 0, "uom": 25,  "name": _CONTROLLER_DRIVER_NAMES.get("GV1", "Online Status")},
+        {"driver": "TIME", "value": 0, "uom": 151, "name": _CONTROLLER_DRIVER_NAMES.get("TIME", "Last Update Time")},
     ]
 
     def __init__(self, polyglot, primary, address, name):
@@ -317,6 +388,7 @@ class KiddeController(udi_interface.Node):
         self._has_valid_params = False
         self._config_done = False
         self._controller_node_added = False
+        self._profile_loaded = False
         self._pending_initial_discovery = False
         self._initial_discovery_in_progress = False
         self._pending_node_device_updates: dict[str, dict] = {}
@@ -331,9 +403,22 @@ class KiddeController(udi_interface.Node):
         self.poly.subscribe(self.poly.LOGLEVEL, self.handle_log_level)
         self.poly.subscribe(self.poly.DISCOVER, self.discover)
 
-        self._update_dynamic_profile()
+        # Synchronize driver names from dynamic profile/profile directory
+        profile_names = get_driver_names_from_profile(self.id)
+        for drv in self.drivers:
+            if not drv.get("name"):
+                drv["name"] = profile_names.get(drv["driver"], "")
+
+        # Dynamic profile is not loaded here: it must not be loaded until the node is done initializing.
         self.poly.ready()
         self.poly.addNode(self, conn_status="ST", rename=True)
+
+    def _maybe_load_profile(self, reason: str = "") -> None:
+        if self._profile_loaded:
+            return
+        LOGGER.info("Node initialized (%s); loading dynamic profile", reason)
+        self._update_dynamic_profile()
+        self._profile_loaded = True
 
     def _update_dynamic_profile(self) -> None:
         updater = getattr(self.poly, "updateJsonProfile", None)
@@ -345,6 +430,7 @@ class KiddeController(udi_interface.Node):
             updater(_dynamic_profile_payload(), {"waitResponse": True})
             LOGGER.info("Dynamic profile updated with 8 Kidde alarm nodedef variants")
             self.poly.Notices.delete("profile")
+            self._profile_loaded = True
         except Exception:
             LOGGER.exception("Dynamic profile update failed")
             self.poly.Notices["profile"] = "Dynamic profile update failed. Check PG3x/IoX compatibility."
@@ -352,6 +438,7 @@ class KiddeController(udi_interface.Node):
     def start(self):
         self._started = True
         self._pending_initial_discovery = True
+        self._maybe_load_profile("START")
         LOGGER.info("Controller start: waiting for CONFIGDONE and ADDNODEDONE before initial Kidde discovery")
         self._maybe_run_initial_discovery("START")
 
@@ -409,6 +496,7 @@ class KiddeController(udi_interface.Node):
         if node_address == self.address:
             self._controller_node_added = True
             LOGGER.info("ADDNODEDONE received for controller node")
+            self._maybe_load_profile("ADDNODEDONE")
             self._maybe_run_initial_discovery("ADDNODEDONE")
             return
 
@@ -449,6 +537,7 @@ class KiddeController(udi_interface.Node):
             return
 
         LOGGER.info("Running initial Kidde discovery after %s", reason)
+        self._maybe_load_profile(f"initial_discovery({reason})")
         self._initial_discovery_in_progress = True
         try:
             self._refresh_status()
@@ -754,6 +843,24 @@ def _minute_of_day_payload(raw_value) -> int | None:
 class KiddeAlarmNode(udi_interface.Node):
     """Child node representing a single Kidde smoke/CO detector."""
 
+    drivers = [
+        {"driver": "ST",     "value": 0, "uom": 25,  "name": "Alarm"},
+        {"driver": "GV0",    "value": 0, "uom": 25,  "name": "Smoke Alarm"},
+        {"driver": "GV1",    "value": 0, "uom": 25,  "name": "CO Alarm"},
+        {"driver": "GV2",    "value": 0, "uom": 25,  "name": "Smoke Hushed"},
+        {"driver": "GV3",    "value": 0, "uom": 44,  "name": "Chirps Off Time after Midnight"},
+        {"driver": "GV4",    "value": 0, "uom": 25,  "name": "Battery State"},
+        {"driver": "GV5",    "value": 0, "uom": 25,  "name": "Low Battery Alarm"},
+        {"driver": "GV6",    "value": 0, "uom": 44,  "name": "Chirps On Time (after Midnight)"},
+        {"driver": "GV7",    "value": 0, "uom": 25,  "name": "Online"},
+        {"driver": "GV9",    "value": 0, "uom": 25,  "name": "Model"},
+        {"driver": "GV10",   "value": 0, "uom": 56,  "name": "Life Remaining"},
+        {"driver": "GV12",   "value": 0, "uom": 25,  "name": "Overall IAQ Status"},
+        {"driver": "SMOKED", "value": 0, "uom": 56,  "name": "Smoke Level"},
+        {"driver": "CO",     "value": 0, "uom": 54,  "name": "CO Level"},
+        {"driver": "TIME",   "value": 0, "uom": 151, "name": "Last Seen"},
+    ]
+
     def __init__(
         self,
         polyglot,
@@ -779,34 +886,41 @@ class KiddeAlarmNode(udi_interface.Node):
         self._driver_ids = {driver["driver"] for driver in self.drivers}
 
     def _build_drivers(self) -> list[dict]:
+        driver_names = get_driver_names_from_profile(self.id)
+        st_name = driver_names.get("ST") or (
+            "Alarm (Smoke / CO)" if (self.supports_smoke and self.supports_co)
+            else "Smoke Alarm" if self.supports_smoke
+            else "CO Alarm" if self.supports_co
+            else "Alarm"
+        )
         drivers = [
-            {"driver": "ST",   "value": 0, "uom": 25},   # Alarm active
-            {"driver": "GV3",  "value": 0, "uom": 44},   # Chirps Off Time after Midnight
-            {"driver": "GV4",  "value": 0, "uom": 25},   # Battery State
-            {"driver": "GV5",  "value": 0, "uom": 25},   # Low Battery Alarm
-            {"driver": "GV6",  "value": 0, "uom": 44},   # Chirps On Time after Midnight
-            {"driver": "GV7",  "value": 0, "uom": 25},   # Online
-            {"driver": "GV9",  "value": 0, "uom": 25},   # Model
-            {"driver": "GV10", "value": 0, "uom": 56},   # Life Remaining
-            {"driver": "TIME", "value": 0, "uom": 151},  # Last Seen
+            {"driver": "ST",   "value": 0, "uom": 25,  "name": driver_names.get("ST", st_name)},
+            {"driver": "GV3",  "value": 0, "uom": 44,  "name": driver_names.get("GV3", "Chirps Off Time after Midnight")},
+            {"driver": "GV4",  "value": 0, "uom": 25,  "name": driver_names.get("GV4", "Battery State")},
+            {"driver": "GV5",  "value": 0, "uom": 25,  "name": driver_names.get("GV5", "Low Battery Alarm")},
+            {"driver": "GV6",  "value": 0, "uom": 44,  "name": driver_names.get("GV6", "Chirps On Time (after Midnight)")},
+            {"driver": "GV7",  "value": 0, "uom": 25,  "name": driver_names.get("GV7", "Online")},
+            {"driver": "GV9",  "value": 0, "uom": 25,  "name": driver_names.get("GV9", "Model")},
+            {"driver": "GV10", "value": 0, "uom": 56,  "name": driver_names.get("GV10", "Life Remaining")},
+            {"driver": "TIME", "value": 0, "uom": 151, "name": driver_names.get("TIME", "Last Seen")},
         ]
         if self.supports_smoke:
             drivers.extend(
                 [
-                    {"driver": "GV0", "value": 0, "uom": 25},
-                    {"driver": "GV2", "value": 0, "uom": 25},
-                    {"driver": "SMOKED", "value": 0, "uom": 56},
+                    {"driver": "GV0", "value": 0, "uom": 25, "name": driver_names.get("GV0", "Smoke Alarm")},
+                    {"driver": "GV2", "value": 0, "uom": 25, "name": driver_names.get("GV2", "Smoke Hushed")},
+                    {"driver": "SMOKED", "value": 0, "uom": 56, "name": driver_names.get("SMOKED", "Smoke Level")},
                 ]
             )
         if self.supports_co:
             drivers.extend(
                 [
-                    {"driver": "GV1", "value": 0, "uom": 25},
-                    {"driver": "CO", "value": 0, "uom": 54},
+                    {"driver": "GV1", "value": 0, "uom": 25, "name": driver_names.get("GV1", "CO Alarm")},
+                    {"driver": "CO", "value": 0, "uom": 54, "name": driver_names.get("CO", "CO Level")},
                 ]
             )
         if self.supports_iaq:
-            drivers.append({"driver": "GV12", "value": 0, "uom": 25})
+            drivers.append({"driver": "GV12", "value": 0, "uom": 25, "name": driver_names.get("GV12", "Overall IAQ Status")})
         return drivers
 
     def _set_if_supported(self, driver: str, value, uom: int | None = None) -> None:

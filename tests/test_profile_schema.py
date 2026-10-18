@@ -159,6 +159,64 @@ class TestProfileSchema(unittest.TestCase):
                                 f"Nodedef '{nodedef_id}' driver '{did}' UOM ({driver_uom}) != editor '{editor_id}' UOM ({editor_uom})",
                             )
 
+    def test_controller_drivers_have_names_matching_profile(self) -> None:
+        """Every driver in KiddeController.drivers must include 'name' matching SETUP properties."""
+        setup_nd = self.nodedef_map["SETUP"]
+        prop_names = {p["id"]: p.get("name") for p in setup_nd["properties"]}
+
+        for driver_entry in nodes.KiddeController.drivers:
+            did = driver_entry["driver"]
+            self.assertIn("name", driver_entry, f"Controller driver '{did}' is missing 'name' attribute")
+            self.assertTrue(driver_entry["name"], f"Controller driver '{did}' has empty 'name'")
+            self.assertEqual(
+                driver_entry["name"],
+                prop_names[did],
+                f"Controller driver '{did}' name '{driver_entry['name']}' != profile property name '{prop_names[did]}'",
+            )
+
+    def test_alarm_node_drivers_have_names_matching_profile(self) -> None:
+        """Every driver in all 8 KiddeAlarmNode variants must include 'name' matching profile properties."""
+        for smoke in (False, True):
+            for co in (False, True):
+                for iaq in (False, True):
+                    alarm_node = nodes.KiddeAlarmNode(None, "SETUP", "d1", "Test", 1, 1, smoke, co, iaq)
+                    nodedef_id = alarm_node.id
+                    nodedef = self.nodedef_map[nodedef_id]
+                    prop_names = {p["id"]: p.get("name") for p in nodedef["properties"]}
+
+                    for driver_entry in alarm_node.drivers:
+                        did = driver_entry["driver"]
+                        with self.subTest(nodedef=nodedef_id, driver=did):
+                            self.assertIn("name", driver_entry, f"Driver '{did}' in '{nodedef_id}' missing 'name'")
+                            self.assertTrue(driver_entry["name"], f"Driver '{did}' in '{nodedef_id}' has empty 'name'")
+                            self.assertEqual(
+                                driver_entry["name"],
+                                prop_names[did],
+                                f"Driver '{did}' in '{nodedef_id}' name '{driver_entry['name']}' != profile '{prop_names[did]}'",
+                            )
+
+    def test_alarm_node_class_level_drivers_have_names(self) -> None:
+        """KiddeAlarmNode class-level drivers must also define non-empty names."""
+        for driver_entry in nodes.KiddeAlarmNode.drivers:
+            did = driver_entry["driver"]
+            with self.subTest(driver=did):
+                self.assertIn("name", driver_entry, f"Class-level driver '{did}' missing 'name'")
+                self.assertTrue(driver_entry["name"], f"Class-level driver '{did}' has empty 'name'")
+
+    def test_get_driver_names_from_profile_retrieval(self) -> None:
+        """Verify get_driver_names_from_profile returns expected dictionary for SETUP and alarm nodedefs."""
+        setup_names = nodes.get_driver_names_from_profile("SETUP")
+        self.assertEqual(setup_names["ST"], "Node Server Status")
+        self.assertEqual(setup_names["GV0"], "Number of Alarms")
+        self.assertEqual(setup_names["GV1"], "Online Status")
+        self.assertEqual(setup_names["TIME"], "Last Update Time")
+
+        alarm7_names = nodes.get_driver_names_from_profile("KIDDEALARM7")
+        self.assertEqual(alarm7_names["ST"], "Alarm (Smoke / CO)")
+        self.assertEqual(alarm7_names["GV0"], "Smoke Alarm")
+        self.assertEqual(alarm7_names["GV1"], "CO Alarm")
+        self.assertEqual(alarm7_names["GV12"], "Overall IAQ Status")
+
 
 if __name__ == "__main__":
     unittest.main()

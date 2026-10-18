@@ -5,19 +5,26 @@ PG3x node server for Kidde HomeSafe alarms, using `udi_interface` and `kidde-hom
 
 ## Features
 - **Controller Node (`SETUP`)**:
-  - Node server status (`ST`), online status (`GV1`), number of alarms (`GV0`), and last update time (`TIME`).
+  - Human-readable driver names: Node Server Status (`ST`), Online Status (`GV1`), Number of Alarms (`GV0`), and Last Update Time (`TIME`).
   - Heartbeat (`DON`/`DOF`) toggle on `shortPoll`.
-  - Accurate `TIME` reporting: only updates when data is successfully received from the Kidde cloud (never on error, startup, or heartbeat).
+  - Accurate `TIME` reporting: only updates when telemetry is successfully received from the Kidde cloud (never on error, startup, or poll).
+  - Dynamic JSON profile: generated in code and loaded once node initialization completes.
 - **Capability-Based Alarm Subnodes (`KIDDEALARM0` – `KIDDEALARM7`)**:
-  - Automatically created and dynamically typed based on device capabilities (Smoke, CO, Air Quality).
-  - Telemetry: smoke alarm, CO alarm, smoke hush, smoke level, CO level (PPM), battery state, low battery alarm, IAQ status, chirps schedule (minutes after midnight), model, life remaining, and last seen.
+  - Automatically discovered and dynamically typed based on device capabilities (Smoke, CO, Air Quality).
+  - Human-readable driver names defined directly on node drivers and synchronized with dynamic profiles.
+  - Telemetry: Smoke Alarm, CO Alarm, Smoke Hushed, Smoke Level, CO Level (PPM), Battery State, Low Battery Alarm, IAQ Status, Chirps Schedule (minutes after midnight), Model, Life Remaining, and Last Seen.
   - Event notifications: sends `DON` on alarm onset and `DOF` on alarm clearance.
-  - All status/boolean drivers use the discrete `BOOLEAN` editor (`No` / `Yes`).
+  - Discrete `BOOLEAN` editor displaying `No` / `Yes` for all boolean states.
 - **Device Commands**:
-  - `Send Command` (`SENDCMD`) function: Identify, Identify Cancel, Test, Hush.
+  - `Send Command` (`SENDCMD`): Identify, Identify Cancel, Test, Hush.
   - Dedicated `Hush Alarm` (`HUSH`) command.
 
-## Setup
+## System Requirements
+- IoX 6.0.6+
+- PG3x 3.4.5+
+- `udi_interface` 3.4.5+
+
+## Configuration
 1. Configure custom parameters in PG3x:
    - `EMAIL`: Kidde account email address (required).
    - `PASSWORD`: Kidde account password (required).

@@ -55,7 +55,7 @@ class TestReleaseManifest(unittest.TestCase):
         self.assertIsNotNone(match, "udi_kidde.py must specify a valid semantic version string")
         version_str = match.group(1)
         major, minor, patch = map(int, version_str.split("."))
-        self.assertGreaterEqual((major, minor, patch), (0, 1, 5), "Version must be at least 0.1.5")
+        self.assertGreaterEqual((major, minor, patch), (0, 1, 6), "Version must be at least 0.1.6")
 
     def test_python_syntax_of_all_files(self) -> None:
         py_files = list(ROOT_DIR.glob("*.py")) + list((ROOT_DIR / "tools").glob("*.py"))
